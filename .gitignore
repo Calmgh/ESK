@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 本地产物
+out/
+!docs/out/
+*.log
+
+# 取证镜像与提取件（绝不入库）
+*.E01
+*.E02
+*.e01
+*.dd
+*.raw
+*.img
+*.bin
+*.vmdk
+*.vhdx
+*.hive
+*_ram.raw
+
+# 临时
+tmp/
+temp/
+*.tmp

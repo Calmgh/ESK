@@ -1,0 +1,20 @@
+# mkit_toolkit  |  dev by Calmgh06
+# mkit_toolkit 依赖
+# 核心（必需）：EWF 镜像加载
+libewf-python>=20231119
+
+# 常用（强烈建议）
+pycryptodome>=3.19          # wallet.py / iosbackup_crypto.py —— AES
+Pillow>=10.0                # stego.py —— 图像与隐写
+dissect.eventlog>=3.7       # winart.py —— Windows EVTX 解析
+numpy>=1.24                 # ext/q13_judge.py —— 像素级比对
+
+# 按需
+capstone>=5.0               # revkit.py —— 反汇编
+pyzbar>=0.1.9               # stego.py —— 二维码（另需系统库 zbar）
+cryptography>=41.0          # 证书解析（X.509）
+openpyxl>=3.1               # xlsx 读写
+lxml>=4.9                   # XML 加速
+
+# 可选：内存镜像分析（本包不含，需单独装）
+# volatility3>=2.5
