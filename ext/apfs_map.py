@@ -11,7 +11,7 @@
     btn_table_space@0x28 (off,len) —— 键区起点 = 0x38 + off + len，
     TOC 项 = (u16 koff, u16 voff)，键位置 = 键区起点 + koff
   * 每个 APFS 对象 obj_phys.o_oid@0x08 —— 用它在窗口内建 oid->paddr 目录，
-    彻底绕开 omap B-tree 的值定位歧义
+    绕开 omap B-tree 的值定位歧义
 """
 import struct
 import sys

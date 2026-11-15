@@ -76,17 +76,17 @@
 | FAT12/16/32 | ✅ | **[~]** | `fat`（合成 FAT16 已测，真实卷待验） |
 | exFAT | ✅ | **[*]** | `exfat`（VBR/簇堆/0x85-0xC0-0xC1 目录项，合成镜像已测） |
 | APFS | ✅ | **[*]** | `ext/apfs_fs.py` + `apfs_map.py`（自建 omap 翻译） |
-| HFS | ✅ | `[ ]` | 计划 |
-| HFS+ / HFSX | ✅ | `[ ]` | 计划（卷头可解，Catalog B-tree 未做） |
+| HFS | ✅ | **[~]** | `hfs.Hfs`（MDB 解析；目录遍历抛 NotImplementedError） |
+| HFS+ / HFSX | ✅ | **[*]** | `hfs.HfsPlus`（卷头/备份卷头、Catalog B-tree、extents overflow、UTF-16BE 名） |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
 | UDF | ✅ | `[ ]` | 计划 |
 | Btrfs | ✅ | `[ ]` | 计划 |
 | ZFS | ✅ | `[ ]` | 计划（体量大，优先级低） |
-| XFS | ✅ | `[ ]` | 计划 |
+| XFS | ✅ | **[~]** | `xfs`（超级块/AG 头/短格式目录/extent 文件；b-tree 格式 inode 未支持） |
 | ReFS | ✅ | `[ ]` | 计划 |
-| SquashFS v1–v4 | ✅ | `[ ]` | 计划（固件常用） |
-| CramFS v2 | ✅ | `[ ]` | 计划 |
-| ROMFS | ✅ | `[ ]` | 计划 |
+| SquashFS v1–v4 | ✅ | **[~]** | `squashfs`（v4，gzip/xz；其他压缩算法抛 NotImplementedError） |
+| CramFS v2 | ✅ | **[*]** | `cramfs`（位域 inode、块指针表、zlib/未压缩/空洞/DIRECT_PTR） |
+| ROMFS | ✅ | **[*]** | `romfs`（inode 链表、校验和、硬链接/符号链接） |
 | MINIFS v3 | ✅ | `[ ]` | 计划 |
 | F2FS | ✅ | `[ ]` | 计划（Android） |
 | EROFS | ✅ | `[ ]` | 计划（Android） |
@@ -105,8 +105,8 @@
 | bcachefs | ✅ | `[ ]` | 计划 |
 | **exFAT（ESK 独有前置）** | ✅ | **[*]** | 见上 |
 
-> **小结**：文件系统 33 种里，ESK 已覆盖 7 种（NTFS / ext / FAT / exFAT / APFS / ISO9660），
-> 其余 26 种为计划项。这是最大的差距，也是后续工作的主线。
+> **小结**：文件系统 33 种里，ESK 已覆盖 11 种（NTFS / ext / FAT / exFAT / APFS / ISO9660 / HFS+ / XFS / SquashFS / CramFS / ROMFS），
+> 其余 22 种为计划项。这是最大的差距，也是后续工作的主线。
 
 ## 五、加密与快照
 
@@ -128,7 +128,7 @@
 | 案件管理 + 哈希链审计 | ✅ | `[ ]` | 计划（`chain` 有 keccak，未接审计） |
 | 卷快照 / 文件索引落盘 | ✅ | `[ ]` | 计划 |
 | 原类型预览（文本/十六进制/图片/音视频/PDF/Office） | ✅ | `[ ]` | 计划 |
-| SQLite 浏览（WAL 回放 / 删除恢复） | ✅ | `[ ]` | 高优先 |
+| SQLite 浏览（WAL 回放 / 删除恢复） | ✅ | **[*]** | `sqlite_forensic`（WAL 帧校验与回放、freeblock 扫描、已删表检测） |
 | Realm 浏览 | ✅ | `[ ]` | 低优先 |
 | PE / ELF / Mach-O / GGUF 结构视图 | ✅ | `[ ]` | 计划（`revkit` 有部分） |
 | 校验 MD5/SHA-1/SHA-256/SM3 | ✅ | **[*]** | `hashcalc` |
@@ -170,8 +170,8 @@
 ## 九、推进顺序（按性价比）
 
 1. ~~hashcalc / search / carve / fat / vdisk / luks~~ ✅ v1.1.0
-2. ~~exfat / iso~~ ✅ v1.2.0　｜　hfs / UDF 顺延
-3. **SQLite 深度浏览**（WAL 回放 + 删除记录恢复）—— 取证最高频
+2. ~~exfat / iso~~ v1.2.0　｜　~~hfs / squashfs / cramfs / romfs / xfs~~ v1.4.0　｜　UDF / btrfs / ad1 / dmg 顺延
+3. ~~SQLite 深度浏览（WAL 回放 + 删除记录恢复）~~ v1.4.0
 4. **时间线聚合**（$STANDARD_INFORMATION / $FILE_NAME / USN / 各平台）
 5. **CLI + JSONL 会话** —— 便于代理编排
 6. **exFAT 之外的移动端**：F2FS / EROFS

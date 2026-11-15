@@ -1,7 +1,7 @@
-﻿<!-- ESK · Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # ESK
 
-**E**lectronic **S**oftware **K**it　·　纯 Python　·　只读　·　零依赖起步
+**E**lectronic **S**oftware **K**it
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
@@ -67,7 +67,7 @@
 
 | 部分 | 内容 | 规模 |
 |---|---|---|
-| **`mkit/`** | 核心库：镜像与容器、NTFS/ext4/FAT、APFS、注册表、哈希、搜索、雕刻、隐写、钱包、加密头、各平台痕迹 | **34 个模块 / 约 27,700 行** |
+| **`mkit/`** | 核心库：镜像与容器、NTFS/ext4/FAT/exFAT/XFS/HFS/SquashFS/CramFS/ROMFS/ISO、APFS、注册表、哈希、搜索、雕刻、SQLite 取证、隐写、钱包、加密头、各平台痕迹 | **41 个模块 / 约 31,600 行** |
 | **`ext/`** | 实战中补写的扩展：APFS 文件级读取、VMDK/LVM2/VHDX、RAID5 重建、像素级比对等 | 34 个模块 |
 
 **适合谁用**：做 CTF 取证题、做真实案件的初检、写自动化提取脚本、需要绕开商业工具限制的场景。
@@ -240,6 +240,12 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 | `revkit.py` | 84 KB | 逆向套件 |
 | `revkit_help.py` | 8.6 KB | 逆向辅助 |
 | `zipview.py` | 3.9 KB | 压缩包只读浏览 |
+| `squashfs.py` | 22.6 KB | **SquashFS v4**：14 种 inode、gzip/xz、片段表 |
+| `cramfs.py` | 14.1 KB | **CramFS v2**：位域 inode、块指针表、zlib/空洞/DIRECT_PTR |
+| `romfs.py` | 12.9 KB | **Linux ROMFS**：inode 链表、校验和、硬链接 |
+| `hfs.py` | 60.5 KB | **HFS / HFS+ / HFSX**：卷头、Catalog B-tree、extents overflow |
+| `xfs.py` | 51.7 KB | **XFS v4/v5**：超级块、AG 头、短格式目录、extent 文件 |
+| `sqlite_forensic.py` | 62.2 KB | **SQLite 取证**：WAL 回放、删除记录恢复、已删表检测 |
 | `hashcalc.py` | 9.3 KB | **哈希校验**：MD5 / SHA-1 / SHA-256 / **SM3**（纯 Python）、EWF 采集哈希核对、目录树哈希 |
 | `search.py` | 9.0 KB | **多编码全局搜索**：ASCII / UTF-8 / UTF-16LE·BE / GBK，关键词或正则，可导出 CSV |
 | `carve.py` | 12.6 KB | **签名雕刻**：16 种格式，按长度/结束标记/截断三种定尾策略 |
@@ -509,7 +515,7 @@ ESK/
 ├── README.md               本文件
 ├── requirements.txt
 ├── VERSION
-├── mkit/                   核心库（34 模块 / 约 27,700 行）
+├── mkit/                   核心库（41 模块 / 约 31,600 行）
 ├── ext/                    自建扩展（34 模块）
 │   └── __init__.py
 ├── examples/               可运行示例（6 个）

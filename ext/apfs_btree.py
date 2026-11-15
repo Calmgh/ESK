@@ -148,16 +148,46 @@ def jkey_split(key):
     return (q & OBJ_ID_MASK, (q >> OBJ_TYPE_SHIFT) & 0xF)
 
 
-def jkey_cmp(a, b):
-    """APFS 文件系统树的键序：obj_id → obj_type → 剩余字节
+def _name_cmp(a, b, case_insensitive=False):
+    """APFS 名字比较
 
-    实测依据（CM-02 Data 卷遍历前若干条）：
-        oid=1 type=9
-        oid=2 type=3
-        oid=2 type=4
-        oid=2 type=9 ...
-    即 obj_id 是主序、type 次序。若直接按 obj_id_and_type 的 u64 比较，
-    type 在高位会把 type=9 的全部排到最前，与真实顺序相反。
+    **大小写敏感性取决于卷**：APFS 的 `APFS_INCOMPAT_CASE_INSENSITIVE` 标志
+    决定该卷是否大小写不敏感。实测 CM-02 的 `OS X Base System - Data` 是
+    **大小写敏感**卷——证据：
+
+        磁盘顺序： "com.apple.ResourceFork" 在前，"com.apple.decmpfs" 在后
+        大小写敏感比较：'R'(0x52) < 'd'(0x64) → 前者在前 ✓
+        大小写不敏感比较：'r' > 'd'          → 后者应在前面 ✗
+
+    所以默认按**字节比较（大小写敏感）**。若卷是 case-insensitive，
+    调用方传 `case_insensitive=True`（本模块不自动探测卷标志）。
+    """
+    if case_insensitive:
+        a = a.lower()
+        b = b.lower()
+    return -1 if a < b else (1 if a > b else 0)
+
+
+def jkey_cmp(a, b, case_insensitive=False):
+    """APFS 文件系统树的键序
+
+    依据 apfs-fuse `ApfsDir.cpp:743-831` CompareStdDirKey：
+      1. obj_id 升序（它用 `ks = (ks<<4)|(ks>>60)` 把 type 旋到低位来实现）
+      2. obj_type 升序
+      3. 同 oid 同类型时按**类型相关字段**比较：
+           3 inode      —— 只有 hdr，无附加字段
+           4 xattr      —— hdr + u16 name_len + name，按 **name** 比（不是 len）
+           5 sibling    —— hdr + u64 sibling_id，数值比较
+           6 sibling_map—— hdr，无附加
+           8 file_extent—— hdr + u64 logical_addr，数值比较
+           9 drec       —— hdr + u32 name_len_and_hash + name，先比 hash 再比 name
+          10 dirstats   —— hdr，无附加
+          12 snap_name  —— hdr + u16 name_len + name，按 name 比
+
+    **两个坑**：
+    * 不能对小端整数逐字节比（0x00FF 存 `FF 00`，0x0100 存 `00 01`，
+      逐字节会得出 0xFF > 0x01，与数值序相反）
+    * 不能把 "长度 + 名字" 整体逐字节比——APFS 是按名字排的
     """
     oa, ta = jkey_split(a)
     ob, tb = jkey_split(b)
@@ -165,10 +195,51 @@ def jkey_cmp(a, b):
         return -1 if oa < ob else 1
     if ta != tb:
         return -1 if ta < tb else 1
-    ra, rb_ = a[8:], b[8:]
-    if ra != rb_:
-        return -1 if ra < rb_ else 1
-    return 0
+
+    x = a[8:]
+    y = b[8:]
+
+    if ta == 4:                       # j_xattr_key_t: u16 name_len + name
+        return _name_cmp(x[2:], y[2:], case_insensitive) if (len(x) >= 2 and len(y) >= 2) \
+            else (0 if x == y else (-1 if x < y else 1))
+
+    if ta == 9:                       # j_drec_hashed_key_t: u32 hash + name
+        if len(x) >= 4 and len(y) >= 4:
+            ha = struct.unpack_from("<I", x, 0)[0]
+            hb = struct.unpack_from("<I", y, 0)[0]
+            # 只比 **hash 部分**（高 22 位）。低 10 位是名字长度，不参与排序。
+            # 实测证据：两个 drec 的 hash 都是 1535694（碰撞），名字分别是
+            # "Network Action Predictor"(len 25) 与 "Safe Browsing Cookies"(len 22)，
+            # 磁盘顺序上前者在前。若连长度一起比，会因 25 > 22 判成后者在前 —— 逆序。
+            ha_h = ha >> 10
+            hb_h = hb >> 10
+            if ha_h != hb_h:
+                return -1 if ha_h < hb_h else 1
+            return _name_cmp(x[4:], y[4:], case_insensitive)
+        return 0 if x == y else (-1 if x < y else 1)
+
+    if ta == 5:                       # j_sibling_key_t: u64 sibling_id
+        if len(x) >= 8 and len(y) >= 8:
+            sa = struct.unpack_from("<Q", x, 0)[0]
+            sb = struct.unpack_from("<Q", y, 0)[0]
+            return 0 if sa == sb else (-1 if sa < sb else 1)
+        return 0
+
+    if ta == 8:                       # j_file_extent_key_t: u64 logical_addr
+        if len(x) >= 8 and len(y) >= 8:
+            la = struct.unpack_from("<Q", x, 0)[0]
+            lb = struct.unpack_from("<Q", y, 0)[0]
+            return 0 if la == lb else (-1 if la < lb else 1)
+        return 0
+
+    if ta == 12:                      # j_snap_name_key_t: u16 name_len + name
+        return _name_cmp(x[2:], y[2:], case_insensitive) if (len(x) >= 2 and len(y) >= 2) \
+            else (0 if x == y else (-1 if x < y else 1))
+
+    if ta in (3, 6, 10):              # 只有 hdr，无附加字段
+        return 0
+
+    return -1 if x < y else (1 if x > y else 0)
 
 
 def jkey_make(obj_id, obj_type, tail=b""):
@@ -302,14 +373,25 @@ class BTreeNode(object):
     def values(self):
         return [v for k, v in self.items()]
 
-    def children(self):
-        """内部节点的子 paddr 列表"""
+    def children(self, oid_base=0):
+        """内部节点的子节点 id 列表
+
+        BTNODE_HASHED 树的内部值不是裸 oid，而是 `btn_index_node_val_t`
+        {le_oid_t binv_child_oid; u8 binv_child_hash[64]}，且子 id 是
+        **相对基址**：`oid = binv_child_oid + oid_base`（apfs-fuse BTree.cpp:240-243
+        里 oid_base 就是树的 m_oid）。非 HASHED 树是裸 oid，不加基址。
+        """
         if self.is_leaf:
             return []
+        hashed = bool(self.flags & BTNODE_HASHED)
         out = []
         for k, v in self.items():
-            if len(v) >= 8:
-                out.append(u64(v, 0) & 0x7FFFFFFFFFFF)
+            if len(v) < 8:
+                continue
+            child = u64(v, 0)
+            if hashed:
+                child = (child + oid_base) & 0xFFFFFFFFFFFFFFFF
+            out.append(child)
         return out
 
 
@@ -317,13 +399,15 @@ class BTreeNode(object):
 class TreeReader(object):
     """按 block_size 读 B-tree 节点并做缓存"""
 
-    def __init__(self, read_block, block_size, cache_size=512):
+    def __init__(self, read_block, block_size, cache_size=512, oid_base=0):
         self.read_block = read_block
         self.bs = block_size
         self._cache = {}
         self._order = []
         self._cap = cache_size
         self.info = None          # 从 root 取到的 btree_info
+        # BTNODE_HASHED 树的子 id 需加这个基址（通常是树的 oid）
+        self.oid_base = oid_base
 
     # ---------------- 节点 ----------------
     def node(self, paddr, is_root=None):
@@ -376,7 +460,7 @@ class TreeReader(object):
                     yield (k, v, paddr)
             else:
                 kids = []
-                for ch in n.children():
+                for ch in n.children(self.oid_base):
                     if not ch:
                         continue
                     if resolve is not None:
@@ -401,7 +485,7 @@ class TreeReader(object):
             n = self.node(p)
             levels[n.level] = levels.get(n.level, 0) + 1
             if not n.is_leaf:
-                for c in n.children():
+                for c in n.children(self.oid_base):
                     if not c:
                         continue
                     if resolve is not None:
@@ -468,7 +552,9 @@ class TreeReader(object):
             v = items[idx][1]
             if len(v) < 8:
                 return None
-            child = u64(v, 0) & 0x7FFFFFFFFFFF
+            child = u64(v, 0)
+            if n.flags & BTNODE_HASHED:
+                child = (child + self.oid_base) & 0xFFFFFFFFFFFFFFFF
             if resolve is not None:
                 child = resolve(child)
                 if not child:

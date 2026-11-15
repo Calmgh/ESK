@@ -144,9 +144,9 @@ struct nloc {
 
 ---
 
-## 5. B-tree 遍历（已打通，2026-11-15）
+## 5. B-tree 遍历
 
-**结论：完整遍历已实现并验证。** 算法依据 apfs-fuse `ApfsLib/BTree.cpp`。
+算法依据 apfs-fuse `ApfsLib/BTree.cpp`。
 
 ### 5.1 节点头与 TOC 位置
 
@@ -286,7 +286,7 @@ nx_omap_oid / apfs_omap_oid  指向 apfs_omap_phys 对象（o_type=0x4000000B）
 记录类型分布：inode 153,571 / xattr 69,209 / sibling_link 143,987 /
 sibling_map 96,414 / file_extent 175,595 / drec 249,406 / dirstats 22 / snap_name 143,987。
 
-**条数与 `btree_info` 声明值逐一吻合**——这是最强的正确性证据，不是"看起来能跑"。
+遍历出的条数与 `btree_info` 声明值一致。
 
 ### 5.11 顺带发现的一个旧 bug
 

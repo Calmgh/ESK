@@ -204,6 +204,30 @@ if got:
     mode = struct.unpack_from("<H", v, 0x50)[0] if len(v) >= 0x52 else 0
     print("  根目录 inode: val_len=%d mode=0o%o" % (len(v), mode))
 
+
+# ============================================================
+print()
+print("=" * 76)
+print("7. 遍历顺序单调性（验证 jkey_cmp 与磁盘实际排序一致）")
+ftr2 = BT.TreeReader(rb, bs)
+prev = None
+bad = 0
+bad_example = None
+checked = 0
+for k, v, p in ftr2.walk(fs_root_paddr, resolve=om.resolve, max_nodes=200000):
+    if prev is not None:
+        c = BT.jkey_cmp(prev, k)
+        checked += 1
+        if c > 0:
+            bad += 1
+            if bad_example is None:
+                bad_example = (BT.jkey_split(prev), BT.jkey_split(k))
+    prev = k
+print("  比较 %s 对相邻记录，逆序 %d 处" % (format(checked, ","), bad))
+if bad_example:
+    print("    首个逆序: %s -> %s" % bad_example)
+check("jkey_cmp 下遍历顺序单调不减", bad == 0, "%d 处逆序" % bad)
+
 img.close()
 print()
 print("=" * 76)

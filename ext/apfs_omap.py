@@ -32,7 +32,13 @@ import struct
 
 import apfs_btree as BT
 
-__all__ = ["Omap"]
+__all__ = ["Omap", "OMAP_VAL_DELETED", "OMAP_VAL_ENCRYPTED", "OMAP_VAL_NOHEADER"]
+
+OMAP_VAL_DELETED = 0x01
+OMAP_VAL_SAVED = 0x02
+OMAP_VAL_ENCRYPTED = 0x04
+OMAP_VAL_NOHEADER = 0x08
+OMAP_VAL_CRYPTO_GENERATION = 0x10
 
 
 class Omap(object):
@@ -46,8 +52,25 @@ class Omap(object):
 
     # ---------------- 构建 ----------------
     @classmethod
-    def build(cls, read_block, block_size, omap_paddr, max_nodes=100000):
-        """从 omap 对象的 paddr 构建映射表"""
+    def build(cls, read_block, block_size, omap_paddr, max_nodes=100000,
+              max_xid=None):
+        """从 omap 对象的 paddr 构建映射表
+
+        max_xid —— **重要的语义开关**
+
+          参考实现（apfs-fuse `ApfsNodeMapperBTree.cpp:97` 用
+          `Lookup(..., exact=false)` 即 FindMode::LE；`go-apfs`
+          `GetOMapEntry(r, oid, maxXid)` 遇到 `Key.Xid > maxXid` 就回退）
+          都是取「**xid ≤ max_xid 的最大版本**」。
+
+          本函数默认 `max_xid=None` → 取全局最大 xid（宽松模式）。
+          这与参考实现**不完全等价**：如果镜像是某个快照点的副本，
+          全局最大可能取到「比快照更新」的版本。
+
+          要严格对齐参考实现，传 `max_xid=<卷头 xid 或树 xid>`。
+
+        跳过 `OMAP_VAL_DELETED(0x1)` 的条目（apfs-fuse BTree.cpp:403-406 同样跳过）。
+        """
         self = cls()
         blk = read_block(omap_paddr)
         if len(blk) < 0x40:
@@ -59,18 +82,22 @@ class Omap(object):
 
         self.info["omap_paddr"] = omap_paddr
         self.info["omap_xid"] = BT.u64(blk, 0x10)
+        om_flags = BT.u32(blk, 0x20)
+        self.info["om_flags"] = om_flags
+        self.info["encrypting"] = bool(om_flags & 0x02)
         tree_type = BT.u32(blk, BT.OMAP_TREE_TYPE_OFF)
         tree_oid = BT.u64(blk, BT.OMAP_TREE_OID_OFF)
         self.info["tree_type"] = tree_type
         self.info["tree_oid"] = tree_oid
         self.info["physical"] = bool(tree_type & BT.OBJ_PHYSICAL)
+        self.info["max_xid"] = max_xid
 
         if not self.info["physical"]:
-            # omap 的 omap —— 极少见，这里明确拒绝而不是猜
             raise NotImplementedError(
                 "该 omap 的树不是物理树（tree_type=0x%08X），需先翻译一层；"
                 "当前未实现" % tree_type)
 
+        self.skipped_deleted = 0
         tr = BT.TreeReader(read_block, block_size)
         for k, v, paddr in tr.walk(tree_oid, max_nodes=max_nodes):
             if len(k) < 16 or len(v) < 16:
@@ -80,6 +107,13 @@ class Omap(object):
             flags = BT.u32(v, 0)
             size = BT.u32(v, 4)
             paddr_v = BT.u64(v, 8)
+
+            if flags & OMAP_VAL_DELETED:
+                self.skipped_deleted += 1
+                continue
+            if max_xid is not None and xid > max_xid:
+                continue
+
             self.entries += 1
             prev = self.map.get(oid)
             if prev is None or xid > prev[0]:

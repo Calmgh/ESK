@@ -147,7 +147,7 @@ def cmd_check(a):
         for q, why in bad:
             print(f"  ✗ 题 {q}: {why}")
         return 1
-    print("  ✓ 全部通过：每题有答案；取证题每步都有命令与输出")
+    print("  每题有答案；取证题每步都有命令与输出")
     return 0
 
 
