@@ -3,6 +3,63 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-11-15
+
+**APFS B-tree 完整遍历打通。** 这是之前唯一标注为「未完成」的核心能力。
+
+### 新增
+
+- **`ext/apfs_btree.py`** —— 真正的 APFS B-tree 遍历（替换原来的猜测式实现）
+  - 算法依据 apfs-fuse `ApfsLib/BTree.cpp`，逐项在真实检材上验算
+  - 键**向前**排（`keys_start + k_off`）、值**向后**排（`vals_start - v_off`）
+  - root 节点末尾 40 字节 `btree_info_t`，定长节点的键长/值长从这里取
+  - 定长节点 TOC = `kvoff_t`(4B)，变长 = `kvloc_t`(8B)
+  - 内部节点值固定 8 字节子 oid；`BTOFF_INVALID=0xFFFF` 表示 ghost
+  - `walk()` / `lookup()` / `count_nodes()` / `dump_node()`
+  - `jkey_cmp()` / `jkey_make()`：APFS 文件系统树的键序比较器
+  - `resolve_tree_root()`：从 `apfs_omap_phys` 对象取真树根
+
+- **`ext/apfs_omap.py`** —— omap 高层封装 `Omap.build()` → oid→paddr 查表
+  - 自动取同 oid 的 **最大 xid** 版本
+  - 明确拒绝非物理 omap（不猜）
+
+- **`ext/test_apfs_btree.py`** —— 用真实 CM-02.E01 跑的 24 项验证
+
+### 修复（都是会导致静默错误的 bug）
+
+- **虚树 vs 物理树搞混**：文件系统树的内部节点值是 **oid**，不是 paddr。
+  直接当 paddr 读会得到 `nkeys=0 flags=0x0000` 的「空节点」，遍历静默返回 0 条。
+  现由 `walk(resolve=...)` / `lookup(resolve=...)` 显式要求传入 omap 翻译器。
+- **B-tree 下降方向写反**：内部节点应下降到「最后一个 `key <= target`」的子节点，
+  原实现取第一个 `>=`，导致走错分支、叶子层查不到键。
+- **`OBJ_PHYSICAL` 常量错**：应为 `0x40000000`，旧代码写成 `0x80000000`（那是 `OBJ_EPHEMERAL`）。
+- **`nx_omap_oid` 不是树根**：它指向 `apfs_omap_phys` 对象，真树根在 `om_tree_oid@0x30`。
+- **卷超级块字段偏移**：`apfs_omap_oid@0x80`、`apfs_root_tree_oid@0x88`、`apfs_volname@0x2C0`
+  （之前用 0xC0 / 0x2D0，读出来的卷名少了 15 个字符）。
+- **顺带发现旧扫描法的 bug**：它记录「卷 371006 → paddr 876153」是错的，
+  876153 实际属于卷 371217（System 卷）。正确值是 873588。
+
+### 验证（真实检材 CM-02.E01，24 项断言全过）
+
+| 检查项 | 结果 |
+|---|---|
+| 容器 omap 条目数 vs `btree_info.key_count` | 6 = 6 |
+| 卷 omap 条目数 vs `key_count` | 22,060 = 22,060 |
+| 卷 omap 节点数 vs `node_count` | 275 = 275 |
+| 卷 omap 翻译 oid 371007 | → paddr 900504 |
+| **FS 树遍历条数 vs `key_count`** | **1,032,191 = 1,032,191** |
+| `lookup(oid=2, type=3)` | 命中，val_len=108 |
+
+记录类型分布：inode 153,571 / xattr 69,209 / sibling_link 143,987 /
+sibling_map 96,414 / file_extent 175,595 / drec 249,406 / dirstats 22 / snap_name 143,987。
+
+### 已知问题
+
+- `BTNODE_HASHED` / `BTNODE_NOHEADER` 分支未实现（当前检材未出现）
+- 加密卷（`OBJ_ENCRYPTED`）的 B-tree 未处理
+- 快照树 `apfs_snap_meta_tree_oid` 未接
+- 100 万条遍历约 100 s，瓶颈在 omap 逐节点翻译，未优化
+
 ## [1.2.0] - 2026-11-15
 
 继续对标 LovelyCarve 补文件系统与容器。

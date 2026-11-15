@@ -276,7 +276,7 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 **做不到**
 
 - APFS 快照 / 加密卷（FileVault）—— 自建实现未覆盖
-- 完整的 APFS B-tree 遍历 —— 见第七节，只到"能按键值对提取记录"
+- APFS 加密卷的 B-tree —— 未处理 `OBJ_ENCRYPTED`
 - 回收站/未分配簇的通用恢复 —— 各平台各有专门工具
 - 内存镜像 —— 本包不含，请用 Volatility 3
 - 写证据 —— 设计上只读
@@ -531,7 +531,7 @@ ESK/
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| APFS 完整 B-tree 遍历 | **未完成** | TOC 的 `voff` 偏移约定未收敛；现用"按记录类型模式匹配"绕过，能读文件但不能完整遍历 |
+| APFS 完整 B-tree 遍历 | **已完成** | 键向前/值向后 + root 尾部 40 B `btree_info`；虚树需经 omap 翻译子 oid。实测 1,032,191 条与 `key_count` 吻合 |
 | APFS 快照 / FileVault | 不支持 | — |
 | LVM2 元数据解析 | 部分 | `pe_start` 前 2 MB 常读为全零，采用"单 segment、`start_extent=0`"假设，靠 ext4 魔数验证 |
 | RAID5 layout | 只实现 left-symmetric | 其他 layout（left-asymmetric / right-*）未覆盖 |

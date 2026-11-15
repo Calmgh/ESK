@@ -144,103 +144,165 @@ struct nloc {
 
 ---
 
-## 5. 未解决的部分：TOC 布局
+## 5. B-tree 遍历（已打通，2026-11-15）
 
-**2026-11-15 更新：又推进了一格，但仍未打通。**
+**结论：完整遍历已实现并验证。** 算法依据 apfs-fuse `ApfsLib/BTree.cpp`。
 
-### 5.1 已确认（用 CM-02.E01 实测）
-
-**`nx_omap_oid` 不是树根。** 它指向一个 `apfs_omap_phys` 对象：
+### 5.1 节点头与 TOC 位置
 
 ```
-paddr 870244:  o_type = 0x4000000B  (OBJ_PHYSICAL | OBJ_OMAP)
-               0x20  om_flags             = 0x00000001
-               0x24  om_snap_count        = 0x00000000
-               0x28  om_tree_type         = 0x40000002  (PHYSICAL | BTREE)
-               0x2C  om_snapshot_tree_type= 0x40000002
-               0x30  om_tree_oid          = 0x000D4767 = 870247   <- 真树根
+btree_node_phys_t（头长 0x38）
+  0x00  obj_phys        32 B
+  0x20  btn_flags       u16   ROOT=0x01 LEAF=0x02 FIXED_KV=0x04 HASHED=0x08 NOHEADER=0x10
+  0x22  btn_level       u16
+  0x24  btn_nkeys       u32
+  0x28  btn_table_space {u16 off; u16 len;}     <- TOC 起点 = 0x38（off 恒为 0）
+  0x2C  btn_free_space
+  0x30  btn_key_free_list
+  0x34  btn_val_free_list
+  0x38  btn_data[]
 ```
 
-正确顺序：`nx_omap_oid` → 读 omap 对象 → `om_tree_oid@0x30` → 树根。
+apfs-fuse 里有 `assert(m_btn->btn_table_space.off == 0)`——所以 TOC 就在 `0x38`，
+不是 `0x38 + off`。这一点之前一直搞错。
 
-**`OBJ_PHYSICAL` 是 `0x40000000`，不是 `0x80000000`**（后者是 `OBJ_EPHEMERAL`）。
-这两个搞反会导致无法判断 `om_tree_oid` 能否直接当 paddr 用。
+### 5.2 键向前、值向后（最关键的一条）
 
-节点头这几个字段实测正确：
-`btn_flags@0x20` / `btn_level@0x22` / `btn_nkeys@0x24` / `btn_table_space@0x28(off,len)`，头长 `0x38`。
-
-### 5.2 仍未打通：FIXED_KV 节点的 TOC
-
-实测节点（omap 树根，paddr 870247）：
-
-```
-flags = 0x0007   (ROOT | LEAF | FIXED_KV)
-level = 0        nkeys = 6
-table_off = 0x0  table_len = 0x1C0 (448)
-
-TOC @0x38 (32 字节):
-  00 00 10 00  40 00 50 00  10 00 20 00  50 00 60 00
-  60 00 70 00  30 00 40 00  30 00 40 00  00 00 00 00
+```cpp
+// BTree.cpp:86-90
+m_keys_start = sizeof(btree_node_phys_t) + m_btn->btn_table_space.len;   // 0x38 + len
+m_vals_start = (m_btn->btn_flags & BTNODE_ROOT)
+               ? blocksize - sizeof(btree_info_t)                        // 末尾 40 字节归 btree_info
+               : blocksize;
 ```
 
-按 4 字节 `kvoff_t {u16 k_off; u16 v_off;}` 解：
+```cpp
+// BTreeNodeFix::GetEntry
+result.key = block + m_keys_start + e[i].k;        // 键：从 keys_start 向**后**长
+result.val = block + m_vals_start - e[i].v;        // 值：从 vals_start 向**前**长
+```
 
-| 项 | k_off | v_off | v-k |
+**所以 `k_off` 与 `v_off` 的数值集合"看起来重叠"是正常的**——它们量的是两个
+相反方向的坐标，不是同一坐标空间。这是之前误判成"矛盾"的原因。
+
+### 5.3 两种 TOC 结构
+
+| 节点类型 | TOC 项 | 大小 | 键长/值长从哪来 |
 |---|---|---|---|
-| e0 | 0x0000 | 0x0010 | 16 |
-| e1 | 0x0040 | 0x0050 | 16 |
-| e2 | 0x0010 | 0x0020 | 16 |
-| e3 | 0x0050 | 0x0060 | 16 |
-| e4 | 0x0060 | 0x0070 | 16 |
-| e5 | 0x0030 | 0x0040 | 16 |
+| `BTNODE_FIXED_KV` | `kvoff_t {u16 k_off; u16 v_off;}` | 4 B | 树根尾部 `btree_info` 的 `bt_key_size`/`bt_val_size` |
+| 变长 | `kvloc_t {nloc k; nloc v;}` | 8 B | TOC 项自带 `k.len`/`v.len` |
 
-`v - k` 恒为 16，与"omap_key 16 B + omap_val 16 B"吻合。
+定长节点的**内部节点**值固定 8 字节（子 oid），不是 `bt_val_size`。
 
-**但有两个矛盾**：
+`BTOFF_INVALID = 0xFFFF` → 该条无值（ghost entry）。
 
-1. `k_off = 0`。若按"相对节点末尾"解释，键落在 4096 处——越界。
-2. `k_off` 与 `v_off` 取值集合互相重叠：`0x10` 既是 e0 的 `v_off` 又是 e2 的 `k_off`；
-   `0x40` 既是 e1 的 `k_off` 又是 e5 的 `v_off`。若键值各占 16 字节，物理上不可能重叠。
+### 5.4 `btree_info_t`（仅有 ROOT 节点在末尾带 40 字节）
 
-所以"offsets 相对节点末尾"这个基准是错的，或者定长节点的 TOC 项根本不是 `kvoff_t`。
-
-**节点尾部 96 字节**（数据区可能在这里）：
-
-```
-79 5e 0d 00 00 00 00 00 | ff ff 10 00 00 10 00 00
-ec 47 0d 00 00 00 00 00 | 00 00 00 00 00 10 00 00
-1b 47 0d 00 00 00 00 00 | 00 00 00 00 00 10 00 00
-2c 47 0d 00 00 00 00 00 | 12 00 00 00 00 10 00 00
+```c
+struct btree_info_fixed_t {   // 16 B
+    u32 bt_flags; u32 bt_node_size; u32 bt_key_size; u32 bt_val_size;
+};
+struct btree_info_t {         // 40 B
+    btree_info_fixed_t bt_fixed;
+    u32 bt_longest_key; u32 bt_longest_val;
+    u64 bt_key_count;   u64 bt_node_count;
+};
 ```
 
-反复出现的 `0x0D5E79 / 0x0D47EC / 0x0D471B / 0x0D472C` 都在 869000–870000（omap 块所在区），
-像是**子节点地址**，但当前节点标了 LEAF。这个矛盾也还没解释。
+`bt_flags` 关键位：`BTREE_PHYSICAL = 0x10`。
 
-### 5.3 现状
+### 5.5 物理树 vs 虚树（第二个大坑）
 
-- `ext/apfs_btree.py` 的 `resolve_tree_root()` **可用**（已实测）。
-- `walk()` / `lookup()` **不可用**，FIXED_KV 下读不出有效条目，不要用它下结论。
-- 文件级读取继续走 `apfs_map.py` 的"扫物理块建 oid→paddr"——它绕开 B-tree，
-  但实测在 CM-02 上给出的卷 paddr=876153、FS 树根=900504 都正确。
+| | `bt_flags & BTREE_PHYSICAL` | 内部节点值 | 用法 |
+|---|---|---|---|
+| omap 树 | 有（实测 `0x12`） | **paddr** | 直接读 |
+| 文件系统树 | 无（实测 `0x42`） | **oid** | 必须先经 omap 翻译 |
 
-### 5.4 历史记录
+把虚树的 oid 当 paddr 读，会读到无关块，表现为 `nkeys=0 flags=0x0000` 的"空节点"。
+实测就是这么卡住过一次。
 
-最早尝试过三种 `voff` 理解，每种都只命中一部分节点：
+```python
+om  = Omap.build(rb, bs, vol_omap_oid)          # oid -> paddr
+root = om.get(vol_root_tree_oid)                 # 371007 -> 900504
+for k, v, p in tree.walk(root, resolve=om.resolve):
+    ...
+```
 
-| 假设 | 结果 |
+### 5.6 文件系统树的键序
+
+实测前 16 条（CM-02 Data 卷）：
+
+```
+oid=1 type=9 → oid=2 type=3 → oid=2 type=4 → oid=2 type=9 ×12
+```
+
+所以是 **obj_id 优先、obj_type 次之、再比名字字节**。
+
+而 `j_key_t.obj_id_and_type` 的原始 u64 是 `(type << 60) | obj_id`——
+按 u64 直排会把 type=9 的全排到最前，与真实顺序相反。
+`lookup` 必须传 `jkey_cmp`。
+
+### 5.7 B-tree 下降方向
+
+标准语义：内部节点每项 `(key, child)` 表示「child 里的键都 ≥ key」，
+所以要下降到**最后一个 `key ≤ target`** 的子节点，不是第一个 `≥`。
+写成后者会走错分支、叶子层找不到键。
+
+### 5.8 omap 对象的解析
+
+```
+nx_omap_oid / apfs_omap_oid  指向 apfs_omap_phys 对象（o_type=0x4000000B），不是树根
+  om_tree_type @0x28  (u32)   实测 0x40000002 = OBJ_PHYSICAL | OBJ_BTREE
+  om_tree_oid  @0x30  (u64)   实测 870247 / 873573
+```
+
+`OBJ_PHYSICAL = 0x40000000`（`0x80000000` 是 `OBJ_EPHEMERAL`，别搞反）。
+
+### 5.9 卷超级块字段偏移（用真实数据定位）
+
+| 字段 | 偏移 | 实测值 |
+|---|---|---|
+| `apfs_omap_oid` | **0x80** | 873520 |
+| `apfs_root_tree_oid` | **0x88** | 371007 |
+| `apfs_extentref_tree_oid` | 0x90 | 900417 |
+| `apfs_snap_meta_tree_oid` | 0x98 | 870147 |
+| `apfs_volname` | **0x2C0** | "OS X Base System - Data" |
+
+反推 `wrapped_meta_crypto_state_t` 占 `0x060..0x074` 共 **20 字节**
+（2+2+4+4+2+2+2 = 18，补齐到 20），所以三个 `*_tree_type` 落在
+`0x74 / 0x78 / 0x7C`，`omap_oid` 落在 `0x80`。
+
+### 5.10 实测验证结果（CM-02.E01）
+
+| 检查项 | 结果 |
 |---|---|
-| `val = node_end - voff` | 部分节点正确 |
-| `val = node_end - 40 - voff` | 另一部分节点正确 |
-| 累积式（逐项累加长度） | 又一部分 |
+| 容器 omap 条目数 vs `btree_info.key_count` | **6 = 6** ✓ |
+| 卷 omap 条目数 vs `key_count` | **22,060 = 22,060** ✓ |
+| 卷 omap 节点数 vs `node_count` | **275 = 275** ✓ |
+| 卷 omap 翻译 371007 | → paddr **900504** ✓ |
+| FS 树遍历条数 vs `key_count` | **1,032,191 = 1,032,191** ✓ |
+| `lookup(oid=2, type=3)` | 命中，`val_len=108` ✓ |
 
-现在知道了：先要把设备/omap 这一层弄对（见 5.1），再谈 TOC；否则基准本身就是错的。
+记录类型分布：inode 153,571 / xattr 69,209 / sibling_link 143,987 /
+sibling_map 96,414 / file_extent 175,595 / drec 249,406 / dirstats 22 / snap_name 143,987。
 
-### 5.5 如果要继续攻
+**条数与 `btree_info` 声明值逐一吻合**——这是最强的正确性证据，不是"看起来能跑"。
 
-1. 取一个小卷（Preboot 最合适，几百个文件）
-2. 用 dpp / apfs-fuse 读**同一个节点**，拿到它们解析出的键字节
-3. 有了"这个节点第 0 条键长什么样"这个已知量，再反推 TOC 语义
-4. **不要靠猜**——猜出来的解析器会静默给出错误键值，比直接报错危险得多
+### 5.11 顺带发现的一个旧 bug
+
+旧扫描法（`apfs_map.py`）记录「卷 371006 → paddr 876153」是**错的**。
+实测 876153 属于卷 **371217**（`OS X Base System`，System 卷），
+371006（`OS X Base System - Data`）的 paddr 是 **873588**。
+
+两者 xid 也不同：873588 是 xid=118689，876153 是 xid=110771。
+扫描法按块序覆盖 `oidmap`，会把不同卷的地址记混。
+
+### 5.12 仍未做的
+
+- `BTNODE_HASHED` / `BTNODE_NOHEADER` 分支未实现（当前检材没出现）
+- 加密卷（`OBJ_ENCRYPTED`）未处理
+- 快照树（`apfs_snap_meta_tree_oid`）未接
+- 遍历 100 万条约需 100 s，未做性能优化（瓶颈是 omap 逐节点翻译）
 
 ---
 

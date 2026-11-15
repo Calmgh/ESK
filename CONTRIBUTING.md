@@ -7,29 +7,17 @@
 
 按优先级：
 
-### 1. APFS B-tree 的 TOC 布局（最重要，已经推进一半）
+### 1. APFS B-tree —— **已完成**（2026-11-15）
 
-见 `docs/APFS.md` 第 5 节。**现状：卡在 FIXED_KV 节点。**
+完整遍历已实现并验证：文件系统树 1,032,191 条记录与 `btree_info.key_count`
+逐一吻合，`lookup` 可用。见 `docs/APFS.md` 第 5 节、`ext/apfs_btree.py`、`ext/apfs_omap.py`。
 
-**已经确认的**（2026-11-15 用 CM-02.E01 实测，写在 `ext/apfs_btree.py`）：
+**还开放的子任务**：
 
-- `nx_omap_oid` / `apfs_omap_oid` 指向 `apfs_omap_phys` 对象，**不是树根**；
-  真根在 `om_tree_oid@0x30`。实测 `870244 → 870247`
-- `OBJ_PHYSICAL = 0x40000000`（`0x80000000` 是 `OBJ_EPHEMERAL`）
-- 节点头长度 `0x38`，`btn_flags@0x20 / level@0x22 / nkeys@0x24 / table_space@0x28` 都对
-- `resolve_tree_root()` 已可用
-
-**卡住的地方**：`flags=0x0007`（含 `FIXED_KV`）的节点，
-TOC 按 `kvoff_t {u16 k_off; u16 v_off;}` 解出来 `v-k ≡ 16`（符合 16 B 键值），
-但 `k_off=0` 且 k/v 偏移区间互相重叠。**基准不是"节点末尾"，或 TOC 项结构不对。**
-
-**建议路径**（比之前更具体）：
-
-1. 取小卷（Preboot），用 **dpp / apfs-fuse 读同一个节点**，拿到它们解析出的键字节
-2. 有了"这个节点第 0 条键长什么样"这个已知量，再反推 TOC 语义
-3. **不要靠猜**——猜出来的解析器会静默给出错误键值，比报错危险得多
-
-补完这一块，`apfs_fs.py` 就能做完整遍历（目前只能靠 `apfs_map.py` 的物理扫描绕行）。
+- `BTNODE_HASHED` / `BTNODE_NOHEADER` 分支（当前检材未出现，未实现）
+- 加密卷（`OBJ_ENCRYPTED`）的 B-tree
+- 快照树 `apfs_snap_meta_tree_oid` 的遍历
+- 性能：100 万条遍历需约 100 s，瓶颈在 omap 逐节点翻译，可做批量预取
 
 ### 2. APFS 快照 / FileVault
 
