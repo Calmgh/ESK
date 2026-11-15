@@ -8,7 +8,7 @@
 [![Deps](https://img.shields.io/badge/required%20deps-1-lightgrey)]()
 [![Author](https://img.shields.io/badge/ESK-Calmgh06-orange)]()
 
-> 版本 1.0.0　｜　Python 3.11+　｜　Windows / Linux / macOS
+> 版本 1.5.0　｜　Python 3.11+　｜　Windows / Linux / macOS　｜　48 个模块
 
 ---
 

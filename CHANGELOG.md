@@ -99,7 +99,6 @@ DMG 有两处实测出来的真 bug：
 - BitLocker 不支持 TPM / BEK / 用户口令；CCM 的 MAC 未校验
 - DMG 不支持 ADC / LZFSE 压缩、加密 DMG、`.dmgpart` 多段
 - AD1 不支持 ADCRYPT 加密、v1/v2 老格式
-- UDF 未实现
 - `volume._gpt()` 在 DMG 设备上返回不完整（同一 GPT 手工解析正常，问题在 volume 侧）
 
 ## [1.4.0] - 2026-11-15
@@ -261,7 +260,6 @@ sibling_map 96,414 / file_extent 175,595 / drec 249,406 / dirstats 22 / snap_nam
 
 ### 已知问题
 
-- UDF 未实现（结构与 ISO9660 完全不同）
 - HFS / HFS+ 未实现
 - exFAT 只在合成镜像上验过
 
