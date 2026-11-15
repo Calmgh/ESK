@@ -3,6 +3,53 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.1] - 2026-11-15
+
+容器补 UBI / UBIFS。
+
+### 新增
+
+- **`mkit/ubi.py`** —— UBI 卷层与 UBIFS
+  - UBI EC 头（64 B，大端，magic `0x55424923`）：version、ec、
+    vid_hdr_offset、data_offset、image_seq、hdr_crc（CRC32）
+  - UBI VID 头（64 B，magic `0x55424921`）：vol_type（动态/静态）、copy_flag、
+    compat、vol_id、lnum、data_size、used_ebs、data_pad、data_crc、sqnum、hdr_crc
+  - 逐 PEB 扫描并把空白块（全 0xFF）与坏块（头 CRC 不过）分开计数；
+    同一 `(vol_id, lnum)` 取 `sqnum` 最大的一份
+  - `volumes()` / `read_volume()` / `read_logical()` / `volume_sub()`；
+    卷的逻辑视图是 `read(offset,size)+size` 鸭子类型，可直接喂 `Ubifs`
+  - UBIFS 超级块解析：key_hash、key_fmt、min_io_size、leb_size、leb_cnt、
+    max_leb_cnt、log_lebs / lpt_lebs / orph_lebs / jhead_cnt、fanout、
+    fmt_version、default_compr、rp_uid / rp_gid / rp_size、time_gran、uuid
+  - **顺序 LEB 扫描**取节点（INO / DATA / DENT），校验 CRC32，按节点长度
+    跳到下一个 8 字节对齐位置
+  - 目录树由 DENT 与 INO 关联得到；只有 DENT 没有 INO 时建存根并标
+    `orphan_guess=True`
+  - 去重：同 inode 取 `creat_sqnum` 最大者，同 `(inum, block)` 与
+    `(parent, name)` 取 `sqnum` 最大者
+  - `listdir()` / `walk()` / `read_file()` / `lookup_path()` / `find()`
+  - 压缩：none 直取、zlib 用标准库、LZO 用自写 LZO1X 解码器（含 UBIFS 的
+    `[总长 u16][压缩长 u16][数据]` 帧格式）、zstd 抛 `NotImplementedError`
+  - 自检 43 项：EC/VID 头 CRC、空白与坏 PEB 计数、卷重组、超级块字段、
+    根目录与子目录列表、inline 与跨块（含 zlib 块）逐字节还原、去重、
+    orphan 标注、节点 CRC 坏时跳过、zstd 显式拒绝
+
+### 未实现（docstring 已写明）
+
+- **UBIFS 索引（IDX / TNC）遍历**：本模块用顺序 LEB 扫描。能恢复文件与
+  目录，但不能区分垃圾回收残留的旧节点与当前有效节点，只能按 `sqnum`
+  取最大者；已删除但仍残留数据块的 inode 会被列出并标 `orphan_guess=True`
+- **LZO 解码器未用真实 LZO 压缩样本验证**：按 LZO1X 算法规范实现，
+  自检只覆盖 none 与 zlib 两条路径，`info()` 里如实给出 `lzo_verified=False`
+- UBIFS 认证节点（AUTH）与 HMAC、fastmap、日志重放、xattr 条目内容、
+  UBI 的 fastmap 卷与 layout volume 卷表内容：均不做
+
+### 验证
+
+- `mkit/ubi.py` 自检 43 项全过
+- `mkit` 53 个模块全部可导入；`selftest_new.py` 45 项通过
+
+
 ## [1.6.0] - 2026-11-15
 
 第 1 波：归档、光盘、RAID 重组与 RAID 元数据。

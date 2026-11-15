@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.6.0"
+__version__ = "1.6.1"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -22,6 +22,7 @@ __all__ = [
     "iosart", "mobile", "mail", "heif",
     "online", "regf", "revkit", "revkit_help",
     "archive", "bincue", "raid", "raidmeta",
+    "ubi",
 ]
 
 # 模块用途速查
@@ -78,6 +79,7 @@ MODULE_DOC = {
     "bincue": "光盘镜像：CUE/BIN 多轨、8 种扇区模式、CCD/MDS 头部、SUB Q 通道",
     "raid": "RAID 重组：0/1/4/5(left,right)/6/10，GF(2^8)，RAID6 缺两盘 P+Q 联立重建",
     "raidmeta": "RAID 元数据：Intel IMSM/VROC MPB 与 SNIA DDF",
+    "ubi": "UBI 卷层（EC/VID 头、PEB 扫描、卷重组）+ UBIFS（顺序 LEB 扫描读文件）",
 }
 
 

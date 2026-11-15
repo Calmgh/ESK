@@ -36,7 +36,7 @@
 | U-Boot legacy uImage | ✅ | `[ ]` | 计划 |
 | Netgear CHK | ✅ | `[ ]` | 计划 |
 | Sercomm NAND ZIP | ✅ | `[ ]` | 计划 |
-| UBI（含内嵌 SquashFS/UBIFS） | ✅ | `[ ]` | 计划 |
+| UBI（含内嵌 SquashFS/UBIFS） | ✅ | **[*]** | `ubi`（EC/VID 头 + PEB 扫描 + 卷重组；UBIFS 顺序 LEB 扫描读文件，LZO 未用真实样本验证） |
 
 ## 二、逻辑检材
 
