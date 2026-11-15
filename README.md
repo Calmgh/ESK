@@ -521,11 +521,15 @@ python examples/05_raid5.py      disk0.img disk2.img rebuilt.img
 ```
 ESK/
 ├── README.md               本文件
-├── requirements.txt
+├── LICENSE                 MIT
+├── CHANGELOG.md            变更记录
+├── RELEASE.md              版本发布说明
 ├── VERSION
-├── mkit/                   核心库（48 模块 / 约 40,000 行）
-├── ext/                    自建扩展（34 模块）
-│   └── __init__.py
+├── requirements.txt
+├── esk_cli.py              命令行入口（images / fs / hash / search / carve / luks / session）
+├── selftest_new.py         包级自检
+├── mkit/                   核心库（49 模块 / 约 40,000 行）
+├── ext/                    自建扩展（36 模块）
 ├── examples/               可运行示例（6 个）
 │   ├── 00_selftest.py
 │   ├── 01_mount_ewf.py
@@ -534,7 +538,9 @@ ESK/
 │   ├── 04_vmdk_lvm.py
 │   └── 05_raid5.py
 └── docs/
-    ├── APFS.md             APFS 容器/omap/B-tree 技术笔记
+    ├── APFS.md             APFS 容器 / omap / B-tree 技术笔记
+    ├── APFS_BTREE_REVIEW.md  APFS B-tree 核对报告
+    ├── FEATURES.md         与 LovelyCarve 的能力对照
     ├── VMDK-LVM2.md        VMDK / LVM2 / VHDX 技术笔记
     └── RAID5.md            mdadm RAID5 重建笔记
 ```

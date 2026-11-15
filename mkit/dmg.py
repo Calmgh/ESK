@@ -20,7 +20,8 @@
       sectorCount@0x1EC = 00×5 02 90 4b -> 大端 168011
 
 只有大端解释能得到 version=4 / headerSize=512 / 数据落在文件范围内。
-库内存放的 `dmg_le.py` 是小端版本，仅作对照，不要用。
+早期有一版按小端实现，在上述两个真实镜像上直接崩（MemoryError / offset 溢出），
+已废弃；本文件只保留大端实现。
 
 ═══ BLKX 表头偏移（容易差 4 字节）═══
 实测 hfsplus_zlib.dmg 的 plist 里每个 blkx 的 Data 都是 284 字节、含 1 个 mish：

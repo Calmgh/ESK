@@ -138,7 +138,7 @@
 | 文件恢复（删除记录 + 重建分区） | ✅ | **[~]** | `fat.deleted`、`ntfs` 有删除项；重建分区未做 |
 | 文件雕刻（14 种） | ✅ | **[*]** | `carve`（**16 种**，多 2 种） |
 | 插件系统（LPP v2） | ✅ | `[ ]` | `[-]` 不做，见文末 |
-| CLI + JSONL 会话 | ✅ | `[ ]` | 计划（高优先，便于代理编排） |
+| CLI + JSONL 会话 | ✅ | **[*]** | `esk_cli.py`（images / fs / hash / search / carve / luks / schema / session） |
 | Dokany 只读挂载 | ✅ | `[-]` | 不做，见文末 |
 
 ## 七、ESK 相对 LovelyCarve 的独有能力

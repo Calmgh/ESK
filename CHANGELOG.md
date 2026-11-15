@@ -127,7 +127,7 @@ DMG 有两处实测出来的真 bug：
 - **`koly` / `mish` 是大端，不是小端。** 实测 `hfsplus_zlib.dmg` 与
   `CC-Switch-v3.18.0-macOS.dmg`：`version@0x004 = 00 00 00 04` → 大端 4（小端 67108864）；
   `headerSize@0x008 = 00 00 02 00` → 大端 512（小端 131072）。
-  库内 `dmg_le.py` 是小端版本，仅作对照，真镜像会崩（`MemoryError` / offset 溢出）。
+  早期一版按小端实现，在上述真实镜像上直接崩（`MemoryError` / offset 溢出），已废弃。
 - **BLKX 表头差 4 字节。** 真实 `Data=284 B` 且含 1 个 `mish`，284 = 0xCC + 40×2
   ⇒ `numberOfBlockChunks` 在 **0xC8**、chunks 从 **0xCC** 起（原写 0xCC / 0xD0）。
 - **chunk 的 `sectorNumber` 是相对所属表 `firstSectorNumber` 的偏移**，不是绝对扇区。
