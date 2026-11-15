@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.5.1"
+__version__ = "1.6.0"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -21,6 +21,7 @@ __all__ = [
     "appdata", "sysconf", "netart", "linuxart",
     "iosart", "mobile", "mail", "heif",
     "online", "regf", "revkit", "revkit_help",
+    "archive", "bincue", "raid", "raidmeta",
 ]
 
 # 模块用途速查
@@ -73,6 +74,10 @@ MODULE_DOC = {
     "regf": "注册表 hive",
     "revkit": "逆向套件",
     "revkit_help": "逆向辅助",
+    "archive": "归档与逻辑包：TAR/GZ/BZ2/XZ（重复成员取证）、7z、Docker/OCI 层、BCP、小米 bak",
+    "bincue": "光盘镜像：CUE/BIN 多轨、8 种扇区模式、CCD/MDS 头部、SUB Q 通道",
+    "raid": "RAID 重组：0/1/4/5(left,right)/6/10，GF(2^8)，RAID6 缺两盘 P+Q 联立重建",
+    "raidmeta": "RAID 元数据：Intel IMSM/VROC MPB 与 SNIA DDF",
 }
 
 

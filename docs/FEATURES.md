@@ -29,7 +29,7 @@
 | Parallels PHDI | ✅ | `[ ]` | 计划 |
 | DiskGenius PMFX | ✅ | `[ ]` | 计划 |
 | 雷电模拟器 LDBK | ✅ | `[ ]` | 计划 |
-| 光盘 BIN / CUE | ✅ | `[ ]` | 计划 |
+| 光盘 BIN / CUE | ✅ | **[*]** | `bincue`（8 种扇区模式、多轨多文件、CCD/MDS 头部、SUB Q 通道） |
 | 小米 HDR1 | ✅ | `[ ]` | 计划 |
 | Buffalo ENC / TRX | ✅ | `[ ]` | 计划 |
 | TP-Link SafeLoader | ✅ | `[ ]` | 计划 |
@@ -44,13 +44,13 @@
 |---|:---:|:---:|---|
 | 文件夹 | ✅ | **[*]** | 直接用 `os.walk` |
 | ZIP | ✅ | **[*]** | `zipview` |
-| TAR / TAR.GZ | ✅ | `[ ]` | 计划（标准库 tarfile 可快速补） |
-| 7z | ✅ | `[ ]` | 计划（需 py7zr） |
-| Docker / OCI 归档 | ✅ | `[ ]` | 计划（本质是 tar） |
+| TAR / TAR.GZ | ✅ | **[*]** | `archive`（ustar/GNU/PAX、重复成员与 superseded、gz/bz2/xz） |
+| 7z | ✅ | **[*]** | `archive`（纯 Python：LZMA/LZMA2/Copy/BCJ/Delta/Deflate/BZip2；AES 抛错） |
+| Docker / OCI 归档 | ✅ | **[*]** | `archive`（manifest/index 双路径、whiteout、逐层变更） |
 | iOS 本地备份 | ✅ | **[*]** | `iosart` + `iosbackup_crypto` |
 | 加密 iOS 备份 | ✅ | **[*]** | `iosbackup_crypto` |
-| BCP 交换数据 | ✅ | `[ ]` | 计划 |
-| 小米 `.bak` | ✅ | `[ ]` | 计划 |
+| BCP 交换数据 | ✅ | **[*]** | `archive`（.fmt 10.0、字符与原生定长、20+ SQL 类型） |
+| 小米 `.bak` | ✅ | **[*]** | `archive`（tar/zip/gzip 探明、descriptor.xml；加密抛错） |
 
 ## 三、分区与卷
 
@@ -63,9 +63,9 @@
 | BSD 标签 | ✅ | **[*]** | `parttable.parse_bsd`（双端序） |
 | LVM2 线性卷 | ✅ | **[*]** | `ext/ans_c02h_lvm.py` |
 | mdadm RAID 成员（0.90/1.x） | ✅ | **[*]** | `ext/com03_raid2.py` |
-| RAID0/1/4/5/6/10 重组 | ✅ | **[~]** | 只完整实现 RAID5 缺单盘 |
-| Intel IMSM / VROC | ✅ | `[ ]` | 计划 |
-| SNIA DDF（PERC/MegaRAID） | ✅ | `[ ]` | 计划 |
+| RAID0/1/4/5/6/10 重组 | ✅ | **[*]** | `raid`（GF(2^8)；RAID5 缺 1 盘；**RAID6 缺 2 盘 P+Q 联立**，10 种组合实测；RAID10 near/offset） |
+| Intel IMSM / VROC | ✅ | **[*]** | `raidmeta`（MPB 倒扫 + 校验和；disk_ord_tbl；级别与 chunk） |
+| SNIA DDF（PERC/MegaRAID） | ✅ | **[*]** | `raidmeta`（anchor/primary、phys/virt/config 三段、13 种 prl/rlq 映射） |
 
 ## 四、文件系统
 

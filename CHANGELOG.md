@@ -3,6 +3,93 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-11-15
+
+第 1 波：归档、光盘、RAID 重组与 RAID 元数据。
+
+### 新增
+
+- **`mkit/archive.py`** —— 归档与逻辑包
+  - TAR / TAR.GZ / TAR.BZ2 / TAR.XZ：ustar / GNU / PAX 三种头，全量成员含重复，
+    真实 `offset` / `offset_data`，`duplicate` / `duplicate_of` / `superseded` /
+    `supersedes` / `live`，`read(name, occurrence=n)` 可读任一历史副本
+  - 7z：三处 CRC 校验、`kEncodedHeader` 解压、PackInfo / UnPackInfo /
+    SubStreamsInfo / FilesInfo、solid 子流切分、Copy / LZMA / LZMA2 /
+    BCJ(x86,PPC,IA64,ARM,ARMT,SPARC) / Delta、单 coder Deflate / BZip2
+  - Docker / OCI：`manifest.json` 与 `index.json`+`oci-layout` 双路径、
+    gzip 层、`.wh.<name>` 删除、`.wh..wh..opq` opaque、逐层变更留存
+  - BCP：`.fmt` 10.0（宿主/文件列序、前缀长度、转义）、字符与原生定长模式、
+    20 余种 SQL 类型、无 `.fmt` 时启发式推断并标 `inferred`
+  - 小米 `.bak`：tar / 前置头 zip / gzip 探明、`descriptor.xml` 定位、加密抛错
+  - 实测两个格式坑：7z 的 `Digests` 段**没有** NumDigests 字段（`kCRC` 后紧跟
+    AllAreDefined）；多 pack 流的基准是 `32 + packPos + 前面所有流长度之和`
+  - 未实现：GNU sparse 内容重组、zstd tar/层、7z 的 BCJ2 / PPMd / Deflate64 /
+    AES-256、BCP 的 `-w` Unicode 全宽、小米加密备份解密
+
+- **`mkit/bincue.py`** —— 光盘镜像
+  - CUE 解析：`FILE` / `TRACK` / `INDEX 00/01` / `PREGAP` / `POSTGAP` / `REM` /
+    `CATALOG` / CD-TEXT；多 `FILE` 多轨路由
+  - 扇区模式 8 种：MODE1/2048、MODE1/2352、MODE2/2048、MODE2/2324、
+    MODE2/2336、MODE2/2352、CDI/2336、CDI/2352；Form1/Form2 按子头第 3 字节
+    bit5 判定
+  - `read_data()` 给逻辑 2048 字节，可直接 `Iso9660(bc)`
+  - CCD：INI 全解析、`AMSF−150` 与 `ALBA` 交叉校验、leadout(0xA2)
+  - MDS：魔数与版本、会话表在 8 个候选偏移里按结构自校验定位，不命中只留头部
+  - SUB：Q 通道含 MSF 与 CRC
+  - 一处规格表会算错：MODE2/2336 写「偏移 8 / 长 2336」实际 8+2336=2344 越界，
+    实现按 8+2328 拆
+  - 未实现：CCD/IMG 与 MDS/MDF 的数据抽取、音频解码、WAVE/MOTOROLA 内嵌偏移
+
+- **`mkit/raid.py`** —— RAID 重组
+  - GF(2^8)：多项式 `0x11D`，exp/log 表实现乘、除、求逆、幂
+  - RAID0 / RAID1 / RAID4 / RAID5（left、right）/ RAID6 / RAID10（near、offset）
+  - RAID5 缺 1 盘用 XOR 重建
+  - **RAID6 缺 2 盘用 P、Q 联立求解**：分三种情形（缺 P+数据盘、缺 Q+数据盘、
+    缺两个数据盘），实测 5 盘 RAID6 的 **全部 10 种双盘缺失组合**逐字节还原正确
+  - RAID1 / RAID10 读失败自动换副本并写告警（取证可追溯）
+  - 未实现：写回与重同步、坏块级扇区重试、RAID7 / RAID-TP、RAID5E / 5EE
+
+- **`mkit/raidmeta.py`** —— RAID 控制器元数据
+  - Intel IMSM / VROC：尾部倒扫签名 + `mpb_size` 与校验和双重验证；
+    MPB 两种拼接解释（签名处向后 / 窗口在签名扇区末尾收尾）都试，取校验和通过者
+  - IMSM 全字段：`check_sum` / `mpb_size` / `family_num` / `generation_num` /
+    `attributes` / `num_disks` / `num_raid_devs` / `cache_size` / `creation_time`；
+    `imsm_disk` 48 B、`imsm_dev` 164+4×(n−1) B、`imsm_map` 与 `disk_ord_tbl`
+  - IMSM 级别映射：`raid_level==1` 且成员数≠2 即 RAID10；chunk =
+    `blocks_per_strip × 512`
+  - SNIA DDF：最后 32 MiB 内扫 `0xDE11DE11`，按 `type` 区分 anchor/primary/
+    secondary；头部 512 字节全字段；phys / virt / config 三段解析；
+    `vd_config` 的 `prim_elmnt_count` / `chunk_shift` / `prl` / `rlq` /
+    `srl` / `blocks` / `array_blocks` / `phys_refnum` / `lba_offset`
+  - DDF 级别映射照 mdadm `layout_ddf2md`，13 种 prl/rlq/srl 组合逐一实测：
+    RAID0、RAID1（2 盘/3 盘）、RAID1E→10、RAID4、RAID5 三种布局、
+    RAID6 三种布局、sec_elmnt_count>1 的 RAID10
+  - RAID3 / RAID5E / RAID5EE / CONCAT 判为不支持并给出原因，不假装能重组
+  - 产出统一描述供 `mkit.raid.Raid` 直接消费
+  - 未实现：写回、DDF 各 section 内部记录 CRC（只验头部，标
+    `section_crc_verified=False`）、IMSM 迁移中的第二份 map、BBM 日志内容、
+    SED / OPAL 加密状态
+
+### 与常见二手资料的差异（本版以 mdadm 源码为准）
+
+- IMSM `check_sum` 在 **0x20**、`mpb_size` 在 **0x24**、`family_num` 在 0x28；
+  磁盘表从 **0xD8** 开始。`attributes` 的 0x80000000 位是「校验和需验证」，
+  不是 family_id
+- `imsm_disk` 里没有 `start_sector`，也没有 `vol_id[2]`；容量是
+  `total_blocks_lo@0x10 | total_blocks_hi@0x20`
+- `imsm_dev` 里没有 `password`、没有 `chunk_size` 字段；chunk 由
+  `blocks_per_strip × 512` 得到
+- `disk_ord_tbl` 是 u32（不是 u8[4]），最高字节是重建标志，低 24 位是盘号
+- DDF 的 `vd_config` 没有单独 chunk 字段，是 `chunk_shift`
+  （`chunk = 512 << chunk_shift`）
+
+### 验证
+
+- 四个新模块 `__main__` 自检全部通过：`archive` / `bincue` / `raid`
+  （43 项，含 RAID6 全 10 种双盘缺失）/ `raidmeta`（74 项，含 13 种 DDF 级别映射）
+- `mkit` 52 个模块全部可导入；`selftest_new.py` 45 项通过
+
+
 ## [1.5.1] - 2026-11-15
 
 BitLocker 补上启动密钥（.BEK）。
