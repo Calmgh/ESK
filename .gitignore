@@ -57,3 +57,6 @@ temp/
 
 # 第三方参考实现（仅本地对照，不随包分发：apfs-fuse 为 GPL、go-apfs 为 Apache）
 ref/
+
+# 第三方参考头文件（仅本地对照，不随包分发）
+_ref/

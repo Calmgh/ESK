@@ -4,31 +4,40 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
 __all__ = [
     "image", "ewf", "ewf_external", "volume",
-    "vdisk", "ntfs", "ext4", "fat",
+    "parttable", "vdisk", "dmg", "ad1",
+    "aes", "bitlocker", "luks", "wallet",
+    "iosbackup_crypto", "ntfs", "ext4", "fat",
     "exfat", "xfs", "hfs", "squashfs",
-    "cramfs", "romfs", "iso", "macart",
-    "aes", "luks", "wallet", "iosbackup_crypto",
-    "hashcalc", "search", "carve", "sqlite_forensic",
-    "stego", "chain", "zipview", "winart",
-    "winacct", "appdata", "sysconf", "netart",
-    "linuxart", "iosart", "mobile", "mail",
-    "heif", "online", "regf", "revkit",
-    "revkit_help",
+    "cramfs", "romfs", "iso", "btrfs",
+    "macart", "hashcalc", "search", "carve",
+    "sqlite_forensic", "timeline", "stego", "chain",
+    "zipview", "winart", "winacct", "appdata",
+    "sysconf", "netart", "linuxart", "iosart",
+    "mobile", "mail", "heif", "online",
+    "regf", "revkit", "revkit_help",
 ]
 
-# 模块用途速查（键为模块名，值为一句话说明）
+# 模块用途速查
 MODULE_DOC = {
     "image": "EWF/裸镜像加载 + SubImage 分区切片",
     "ewf": "EWF 解析",
     "ewf_external": "外部 libewf 调用",
     "volume": "MBR / GPT 分区表",
+    "parttable": "APM / BSD label / Amiga RDB",
     "vdisk": "QCOW2 v2/v3 与 VirtualBox VDI",
+    "dmg": "Apple DMG（UDIF）",
+    "ad1": "AccessData AD1 逻辑镜像",
+    "aes": "AES",
+    "bitlocker": "BitLocker 恢复密码解锁与卷解密",
+    "luks": "LUKS1/LUKS2 头解析（不解锁）",
+    "wallet": "钱包 / 助记词",
+    "iosbackup_crypto": "iOS 备份解密",
     "ntfs": "NTFS",
     "ext4": "ext2/3/4",
     "fat": "FAT12/16/32",
@@ -39,15 +48,13 @@ MODULE_DOC = {
     "cramfs": "CramFS v2",
     "romfs": "Linux ROMFS",
     "iso": "ISO 9660（含 Joliet / Rock Ridge）",
+    "btrfs": "Btrfs（超级块 / chunk 映射 / 树节点；遍历未实现）",
     "macart": "macOS 痕迹（APFS 见 ext/apfs_fs.py）",
-    "aes": "AES",
-    "luks": "LUKS1/LUKS2 头解析（不解锁）",
-    "wallet": "钱包 / 助记词",
-    "iosbackup_crypto": "iOS 备份解密",
     "hashcalc": "MD5 / SHA-1 / SHA-256 / SM3 与 EWF 采集哈希核对",
     "search": "多编码全局搜索",
     "carve": "签名文件雕刻",
     "sqlite_forensic": "SQLite WAL 回放 / 删除记录 / 已删表检测",
+    "timeline": "跨平台时间线聚合与导出",
     "stego": "隐写检测",
     "chain": "证据链完整性",
     "zipview": "压缩包只读浏览",

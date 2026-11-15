@@ -24,8 +24,8 @@
 | VDI | ✅ | **[*]** | `vdisk.Vdi` |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
 | UDF 1.02–2.01 | ✅ | `[ ]` | 计划（UDF 结构独立于 ISO9660，未实现） |
-| AD1（FTK 逻辑镜像） | ✅ | `[ ]` | 计划 |
-| DMG（Apple） | ✅ | `[ ]` | 计划 |
+| AD1（FTK 逻辑镜像） | ✅ | **[~]** | `ad1`（段发现/头/块解压/目录树；ADCRYPT 未实现） |
+| DMG（Apple） | ✅ | **[*]** | `dmg`（koly/plist/mish/zlib/bzip2/LZMA；ADC·LZFSE 未实现） |
 | Parallels PHDI | ✅ | `[ ]` | 计划 |
 | DiskGenius PMFX | ✅ | `[ ]` | 计划 |
 | 雷电模拟器 LDBK | ✅ | `[ ]` | 计划 |
@@ -58,9 +58,9 @@
 |---|:---:|:---:|---|
 | GPT | ✅ | **[*]** | `volume._gpt`（注意 `parse()` 有 bug） |
 | MBR / EBR | ✅ | **[*]** | `volume.parse` |
-| APM（Apple） | ✅ | `[ ]` | 计划 |
-| Amiga RDB | ✅ | `[ ]` | 计划 |
-| BSD 标签 | ✅ | `[ ]` | 计划 |
+| APM（Apple） | ✅ | **[*]** | `parttable.parse_apm` |
+| Amiga RDB | ✅ | **[*]** | `parttable.parse_amiga`（含校验和验证） |
+| BSD 标签 | ✅ | **[*]** | `parttable.parse_bsd`（双端序） |
 | LVM2 线性卷 | ✅ | **[*]** | `ext/ans_c02h_lvm.py` |
 | mdadm RAID 成员（0.90/1.x） | ✅ | **[*]** | `ext/com03_raid2.py` |
 | RAID0/1/4/5/6/10 重组 | ✅ | **[~]** | 只完整实现 RAID5 缺单盘 |
@@ -80,7 +80,7 @@
 | HFS+ / HFSX | ✅ | **[*]** | `hfs.HfsPlus`（卷头/备份卷头、Catalog B-tree、extents overflow、UTF-16BE 名） |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
 | UDF | ✅ | `[ ]` | 计划 |
-| Btrfs | ✅ | `[ ]` | 计划 |
+| Btrfs | ✅ | **[~]** | `btrfs`（超级块/chunk 映射/树节点；**不能遍历、不能读文件**） |
 | ZFS | ✅ | `[ ]` | 计划（体量大，优先级低） |
 | XFS | ✅ | **[~]** | `xfs`（超级块/AG 头/短格式目录/extent 文件；b-tree 格式 inode 未支持） |
 | ReFS | ✅ | `[ ]` | 计划 |
@@ -105,15 +105,15 @@
 | bcachefs | ✅ | `[ ]` | 计划 |
 | **exFAT（ESK 独有前置）** | ✅ | **[*]** | 见上 |
 
-> **小结**：文件系统 33 种里，ESK 已覆盖 11 种（NTFS / ext / FAT / exFAT / APFS / ISO9660 / HFS+ / XFS / SquashFS / CramFS / ROMFS），
-> 其余 22 种为计划项。这是最大的差距，也是后续工作的主线。
+> **小结**：文件系统 33 种里，ESK 已覆盖 12 种（NTFS / ext / FAT / exFAT / APFS / ISO9660 / HFS+ / XFS / SquashFS / CramFS / ROMFS / Btrfs 部分），
+> 其余 21 种为计划项。这是最大的差距，也是后续工作的主线。
 
 ## 五、加密与快照
 
 | 类型 | LovelyCarve | ESK | 模块 / 说明 |
 |---|:---:|:---:|---|
 | LUKS1 / LUKS2 | ✅ | **[~]** | `luks`（**只解头，不解锁**） |
-| BitLocker | ✅ | `[ ]` | 计划 |
+| BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码解锁 + XTS/CBC/diffuser；TPM·BEK 只枚举） |
 | VeraCrypt | ✅ | `[ ]` | 计划 |
 | FileVault 2 | ✅ | `[ ]` | 计划 |
 | Windows EFS | — | `[ ]` | 计划 |
@@ -134,7 +134,7 @@
 | 校验 MD5/SHA-1/SHA-256/SM3 | ✅ | **[*]** | `hashcalc` |
 | E01 采集哈希核对 | ✅ | **[*]** | `hashcalc.verify_ewf_hash` |
 | 全局搜索（多编码/正则/未分配） | ✅ | **[*]** | `search` |
-| 时间线（+ USN 日志） | ✅ | `[ ]` | 计划 |
+| 时间线（+ USN 日志） | ✅ | **[*]** | `timeline`（6 种换算 + CSV/JSONL/SQLite 导出；USN/EVTX 需先由别的模块解析） |
 | 文件恢复（删除记录 + 重建分区） | ✅ | **[~]** | `fat.deleted`、`ntfs` 有删除项；重建分区未做 |
 | 文件雕刻（14 种） | ✅ | **[*]** | `carve`（**16 种**，多 2 种） |
 | 插件系统（LPP v2） | ✅ | `[ ]` | `[-]` 不做，见文末 |
@@ -171,7 +171,7 @@
 
 1. ~~hashcalc / search / carve / fat / vdisk / luks~~ ✅ v1.1.0
 2. ~~exfat / iso~~ v1.2.0　｜　~~hfs / squashfs / cramfs / romfs / xfs~~ v1.4.0　｜　UDF / btrfs / ad1 / dmg 顺延
-3. ~~SQLite 深度浏览（WAL 回放 + 删除记录恢复）~~ v1.4.0
+3. ~~SQLite 深度浏览~~ v1.4.0　｜　~~BitLocker / Btrfs / 时间线 / AD1 / DMG / 三张分区表 / CLI~~ v1.5.0　｜　UDF 顺延
 4. **时间线聚合**（$STANDARD_INFORMATION / $FILE_NAME / USN / 各平台）
 5. **CLI + JSONL 会话** —— 便于代理编排
 6. **exFAT 之外的移动端**：F2FS / EROFS

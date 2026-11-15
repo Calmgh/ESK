@@ -257,7 +257,7 @@ for _m in _mk.__all__:
     except Exception as _e:
         _missing.append("%s(%s)" % (_m, str(_e)[:30]))
 check("__all__ 全部可导入", not _missing, ", ".join(_missing) or "%d 个模块" % len(_mk.__all__))
-check("版本号", _mk.__version__ == "1.4.0", _mk.__version__)
+check("版本号", _mk.__version__ == "1.5.0", _mk.__version__)
 check("水印", _mk.__watermark__ == "ESK by Calmgh06", _mk.__watermark__)
 
 # ============================================================

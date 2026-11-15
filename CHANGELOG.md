@@ -3,6 +3,87 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-11-15
+
+补 7 个模块：BitLocker、Btrfs、时间线、AD1、DMG、三张非 x86 分区表，以及 CLI。
+
+### 新增
+
+- **`mkit/bitlocker.py`** —— BitLocker
+  - 元数据三处全扫：卷头 0x03 签名 + 指针、卷尾 `size-0x10000/-0x20000`、0x1000/0x2000/0x10000/0x20000 候选，各用签名+版本+尺寸三重自校验
+  - 8 字节 entry 链（含 value_type）；VMK 内部属性（描述串 / stretch key / CCM 密钥）
+  - **恢复密码真实解锁**：8×6 位 ÷11 → u16 LE×8 → SHA-256 → 0x100000 轮 stretch → AES-256-CCM-CTR → VMK
+  - 自研原语并已对拍：AES-XTS（**NIST CAVP**）、AES-CCM（**RFC 3610 #1**）、CCM-CTR、Elephant diffuser A/B、CBC
+  - 卷解密：XTS / CBC / CBC+diffuser，`decrypt_sector` / `read_decrypted`
+  - 未实现：TPM / .BEK / 用户口令（需外部密钥材料，只枚举）；CCM 的 MAC 校验（AAD 无公开定义，与 libbde 一致只做 CTR，`tag_verified=False`）
+
+- **`mkit/btrfs.py`** —— Btrfs
+  - 超级块（偏移 0x10000，`_BHRfS_M`）全字段
+  - `sys_chunk_array` → 逻辑/物理 chunk 映射，type 标志解码
+  - 树节点（`btrfs_header` + `btrfs_item` / `btrfs_key_ptr`）
+  - `logical_to_physical()` / `read_logical()` / `read_node()` / `root_tree()`
+  - **目录遍历与读文件未实现**，`listdir()` / `walk()` / `read_file()` / `find()` 一律抛 `NotImplementedError`（返回空列表会造成误判）
+
+- **`mkit/timeline.py`** —— 跨平台时间线
+  - 6 种时间戳换算：Unix / FILETIME / HFS(1904) / APFS 纳秒 / FAT DOS（含 `tz_assumed` 标注）/ ext4（秒+纳秒）
+  - 时区归一：`tz_offset_hours` 把墙钟折算 UTC
+  - 适配器：`from_fs`（任意 `walk()`）、`from_regf`（LastWriteTime）、`from_csv`、`from_json`
+  - `Timeline`：排序、`(ts,source,path,action)` 去重（可关）、filter / stats / heatmap / gaps
+  - 导出：CSV（`utf-8-sig`，Excel 中文不乱码）/ JSONL / SQLite（建表 + 4 索引）
+
+- **`mkit/ad1.py`** —— AccessData AD1 逻辑镜像
+  - 段发现（`.ad1…adN`、`.AD1`、`.ad01`，段号缺口即止）
+  - 段头 `ADSEGMENTEDFILE`、`ADLOGICALIMAGE` 头、`ADCRYPT` 识别后抛 `NotImplementedError`
+  - 条目树（48 字节头，兄弟链 + 子链，带环检测）、元数据链（大小 / 4 个时间戳 / MD5 / SHA-1）
+  - 块表 + zlib 解压 + 跨段读取；设备对象 `size` / `read` / `entries` / `entry` / `sub`
+
+- **`mkit/dmg.py`** —— Apple DMG（UDIF）
+  - `koly` trailer 全字段；XML / binary plist；`blkx.Data` 为 bytes 或 base64
+  - 单个 Data 内串联多张 `mish` 自动重同步
+  - chunk 类型：zero / raw / ignore / comment / terminator / end / zlib / bzip2 / LZMA（三级级联）
+  - 按扇区随机读 + LRU 缓存（上限 64 MiB），raw 块直读不缓存
+  - ADC / LZFSE 抛 `NotImplementedError`
+
+- **`mkit/parttable.py`** —— 非 x86 分区表
+  - APM（DDM `sbSig=0x4552` + 逐块 `pmSig=0x504D`，块大小不固定）
+  - BSD disklabel（偏移 512/0 双点探测，四项指标判端序，16 字节分区项）
+  - Amiga RDB（`RDSK` + `PART` 链，环检测 + 越界保护 + 校验和验证）
+  - `detect()` / `parse_any()` / `describe()`
+
+- **`esk_cli.py`** —— 命令行入口
+  - `<集合> <动词>` 结构：`images open` / `fs ls|tree|cat|find` / `hash` / `search` / `carve` / `luks` / `schema` / `session`
+  - `FsAdapter` 抹平各文件系统接口差异（按路径 / 按 inode / 按 entry 三种）
+  - `session` 读 stdin 的 JSONL，逐行执行并回 JSON——便于脚本与代理编排
+  - 端到端验证：合成 FAT16 镜像上 `images open` → `fs ls` → `fs find` → `fs cat` → `hash` → `search` → `session` 全通
+
+### 修复
+
+DMG 有两处实测出来的真 bug：
+
+- **`koly` / `mish` 是大端，不是小端。** 实测 `hfsplus_zlib.dmg` 与
+  `CC-Switch-v3.18.0-macOS.dmg`：`version@0x004 = 00 00 00 04` → 大端 4（小端 67108864）；
+  `headerSize@0x008 = 00 00 02 00` → 大端 512（小端 131072）。
+  库内 `dmg_le.py` 是小端版本，仅作对照，真镜像会崩（`MemoryError` / offset 溢出）。
+- **BLKX 表头差 4 字节。** 真实 `Data=284 B` 且含 1 个 `mish`，284 = 0xCC + 40×2
+  ⇒ `numberOfBlockChunks` 在 **0xC8**、chunks 从 **0xCC** 起（原写 0xCC / 0xD0）。
+- **chunk 的 `sectorNumber` 是相对所属表 `firstSectorNumber` 的偏移**，不是绝对扇区。
+  实测「GPT Header」表 `firstSector=1` 而 chunk `sector=0`；当绝对扇区用会让多张表挤到扇区 0 互相覆盖。
+
+### 验证
+
+- 19 个模块的 `__main__` 自检通过；`selftest_new.py` 45 项通过；`mkit.__all__` 47 个模块全部可导入
+- **DMG 对真实镜像验到端到端**：`Dmg → GPT（分区 0 = Apple HFS+，LBA 40..3783）→ HFS+ 挂载 → 列出 5 项`，读到 `passwords.txt`、`a_directory`
+- **BitLocker**：AES-XTS 对拍 NIST CAVP、AES-CCM 对拍 RFC 3610 #1；恢复密码走真实 0x100000 轮 stretch 后 VMK 匹配，错误密码返回 None
+
+### 已知问题
+
+- Btrfs 只有超级块 / chunk 映射 / 树节点，**不能列目录、不能读文件**
+- BitLocker 不支持 TPM / BEK / 用户口令；CCM 的 MAC 未校验
+- DMG 不支持 ADC / LZFSE 压缩、加密 DMG、`.dmgpart` 多段
+- AD1 不支持 ADCRYPT 加密、v1/v2 老格式
+- UDF 未实现
+- `volume._gpt()` 在 DMG 设备上返回不完整（同一 GPT 手工解析正常，问题在 volume 侧）
+
 ## [1.4.0] - 2026-11-15
 
 补 6 个模块：4 个文件系统、1 个 SQLite 取证、1 个 XFS 重写。
