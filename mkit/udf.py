@@ -1182,9 +1182,19 @@ def _mk_anchor(length, location):
     return bytes(b)
 
 
-def _mk_ad_short(length, lbn):
+def _mk_ad_short(length, lbn, typ=0):
+    """short_ad{extentLength u32, extentPosition u32}，长度高 2 位是类型"""
     b = bytearray(8)
-    struct.pack_into("<II", b, 0, length & 0x3FFFFFFF, lbn)
+    struct.pack_into("<II", b, 0, (length & 0x3FFFFFFF) | (typ << 30), lbn)
+    return bytes(b)
+
+
+def _mk_ad_long(length, lbn, typ=0, part=0):
+    """long_ad{extentLength u32, lb_addr{逻辑块号 u32, 分区引用 u16}, impUse[6]}"""
+    b = bytearray(16)
+    struct.pack_into("<I", b, 0, (length & 0x3FFFFFFF) | (typ << 30))
+    struct.pack_into("<I", b, 4, lbn)
+    struct.pack_into("<H", b, 8, part)
     return bytes(b)
 
 
@@ -1225,15 +1235,23 @@ def _mk_fid(name_raw, target_lbn, chars, dir_lbn, size=0):
     body[3] = len(name_raw)
     body[4:20] = _mk_icb(target_lbn, 0, size)
     struct.pack_into("<H", body, 20, 0)          # lengthOfImplementationUse
-    desc = _mk_tag(TAG_FID, dir_lbn, bytes(body) + name_raw)
-    if len(desc) % 4:
-        desc += b"\x00" * (4 - len(desc) % 4)
-    return desc
+    body += name_raw
+    # 填充到 4 字节后再算 CRC，CrcLen+16 必须等于含填充的整条长度
+    while (16 + len(body)) % 4:
+        body += b"\x00"
+    return _mk_tag(TAG_FID, dir_lbn, bytes(body))
 
 
-def build_image(sector=2048, block=None, volume_id="ESK_UDF_VOL"):
-    """最小合成 UDF 1.02 镜像：VRS + AVDP + VDS + FSD + 根目录 + 文件"""
+def build_image(sector=2048, block=None, volume_id="ESK_UDF_VOL",
+                layout="inline"):
+    """合成最小 UDF 1.02 镜像
+
+    layout="inline"：根目录 FE 用 embedded 数据 + short_ad（小目录的常见形态）
+    layout="long"  ：根目录数据放在分区 extent，分配描述符用 long_ad
+    两种布局都带一个空洞文件（SPARSE.DAT，类型 1 extent）与一条已删除 FID。
+    """
     bs = block or sector
+    mk_ad = _mk_ad_long if layout == "long" else _mk_ad_short
     total = 320 * DESC_SIZE
     img = bytearray(total)
     vrs_base = VRS_SECTOR * sector
@@ -1269,44 +1287,65 @@ def build_image(sector=2048, block=None, volume_id="ESK_UDF_VOL"):
     inner_lbn = chunk(7)
     inner_d1 = chunk(8)
     inner_d2 = chunk(9)
+    sparse_lbn = chunk(10)
+    root_data = chunk(14)
 
     # 2) FSD 指向根目录 FE
     put(part_base + 0 * DESC_SIZE, _mk_tag(TAG_FSD, chunk(0), _mk_fsd(root_lbn)))
 
-    # 3) 根目录 FE：embedded 数据里放 4 条 FID
+    # 3) 根目录：6 条 FID（含父目录项与一条已删除项）
     root_dir = b"".join((
         _mk_fid(b"", root_lbn, FID_PARENT, root_lbn, 2048),
         _mk_fid(b"\xfeHELLO.TXT", hello_lbn, 0, root_lbn, 2048),
         _mk_fid(b"\x10" + "中文.TXT".encode("utf-16-be"), cjk_lbn, 0,
                 root_lbn, 2048),
         _mk_fid(b"\xfeSUB", sub_lbn, FID_DIRECTORY, root_lbn, 2048),
+        _mk_fid(b"\xfeSPARSE.DAT", sparse_lbn, 0, root_lbn, 2048),
+        _mk_fid(b"\xfeGONE.TXT", hello_lbn, FID_DELETED, root_lbn, 2048),
     ))
-    put(part_base + 1 * DESC_SIZE,
-        _mk_fe(root_lbn, FT_DIR, AD_INLINE, len(root_dir), embedded=root_dir))
+    if layout == "long":
+        put(part_base + 1 * DESC_SIZE,
+            _mk_fe(root_lbn, FT_DIR, AD_LONG, len(root_dir),
+                   ads=_mk_ad_long(2048, root_data)))
+        put(part_base + 14 * DESC_SIZE, root_dir)
+    else:
+        put(part_base + 1 * DESC_SIZE,
+            _mk_fe(root_lbn, FT_DIR, AD_INLINE, len(root_dir),
+                   embedded=root_dir))
 
-    # 4) 文件 FE：short_ad 指向数据 extent
+    # 4) 普通文件：分配描述符指向数据 extent
+    ad_kind = AD_LONG if layout == "long" else AD_SHORT
     put(part_base + 2 * DESC_SIZE,
-        _mk_fe(hello_lbn, FT_FILE, AD_SHORT, len(hello),
-               ads=_mk_ad_short(len(hello), hello_data)))
+        _mk_fe(hello_lbn, FT_FILE, ad_kind, len(hello),
+               ads=mk_ad(len(hello), hello_data)))
     put(part_base + hello_data * bs, hello)
 
     # 5) 16 位名字的那个文件
     put(part_base + 4 * DESC_SIZE,
-        _mk_fe(cjk_lbn, FT_FILE, AD_SHORT, len(cjk),
-               ads=_mk_ad_short(len(cjk), cjk_data)))
+        _mk_fe(cjk_lbn, FT_FILE, ad_kind, len(cjk),
+               ads=mk_ad(len(cjk), cjk_data)))
     put(part_base + cjk_data * bs, cjk)
 
-    # 6) 子目录（同样 inline），里面一个双 extent 文件
+    # 6) 子目录（inline），里面一个双 extent 文件
     sub_dir = _mk_fid(b"\xfeINNER.BIN", inner_lbn, 0, sub_lbn, 2048)
     put(part_base + 6 * DESC_SIZE,
         _mk_fe(sub_lbn, FT_DIR, AD_INLINE, len(sub_dir), embedded=sub_dir))
-    ads = _mk_ad_short(8, inner_d1) + _mk_ad_short(len(inner) - 8, inner_d2)
+    ads = mk_ad(8, inner_d1) + mk_ad(len(inner) - 8, inner_d2)
     put(part_base + 7 * DESC_SIZE,
-        _mk_fe(inner_lbn, FT_FILE, AD_SHORT, len(inner), ads=ads))
+        _mk_fe(inner_lbn, FT_FILE, ad_kind, len(inner), ads=ads))
     put(part_base + inner_d1 * bs, inner[:8])
     put(part_base + inner_d2 * bs, inner[8:])
 
-    # 7) 主卷描述符序列：PVD / PD / LVD / TD
+    # 7) 空洞文件：4B 实数 + 2048B 未记录但已分配（类型 1）+ 4B 实数
+    sparse = b"HEAD" + b"\x00" * 2048 + b"TAIL"
+    sads = (mk_ad(4, chunk(11)) + mk_ad(2048, chunk(12), 1)
+            + mk_ad(4, chunk(13)))
+    put(part_base + 10 * DESC_SIZE,
+        _mk_fe(sparse_lbn, FT_FILE, ad_kind, len(sparse), ads=sads))
+    put(part_base + 11 * DESC_SIZE, sparse[:4])
+    put(part_base + 13 * DESC_SIZE, sparse[-4:])
+
+    # 8) 主卷描述符序列：PVD / PD / LVD / TD
     put(vds_base + 0 * DESC_SIZE,
         _mk_tag(TAG_PVD, vds_base // sector, _mk_pvd(volume_id)))
     put(vds_base + 1 * DESC_SIZE,
@@ -1318,7 +1357,7 @@ def build_image(sector=2048, block=None, volume_id="ESK_UDF_VOL"):
     put(vds_base + 3 * DESC_SIZE,
         _mk_tag(TAG_TD, (vds_base + 3 * DESC_SIZE) // sector, bytes(496)))
 
-    # 8) 锚点：扇区 256 与卷尾 N-1 各一份
+    # 9) 锚点：扇区 256 与卷尾 N-1 各一份
     put(ANCHOR_SECTOR * sector,
         _mk_tag(TAG_AVDP, ANCHOR_SECTOR, _mk_anchor(4 * DESC_SIZE,
                                                     vds_base // sector)))
@@ -1343,45 +1382,59 @@ if __name__ == "__main__":
     HELLO = b"UDF SELFTEST: hello from ESK\n"
     CJK = b"UDF-CJK-PAYLOAD"
     INNER = b"INNER-BINARY-OK"
+    SPARSE = b"HEAD" + b"\x00" * 2048 + b"TAIL"
 
     for sec in (2048, 512):
-        raw = build_image(sec)
-        assert probe(MemSub(raw)), "probe 失败 sector=%d" % sec
-        udf = Udf(MemSub(raw))
-        inf = udf.info()
-        assert inf["udf_version"] == "1.02", inf["udf_version"]
-        assert inf["volume_id"] == "ESK_UDF_VOL", inf["volume_id"]
-        assert inf["sector_size"] == sec, inf["sector_size"]
-        assert inf["logical_block_size"] == sec, inf["logical_block_size"]
-        assert inf["partition_start"] == 65536 // sec, inf["partition_start"]
-        assert udf.vrs() == ["BEA01", "NSR02", "TEA01"], udf.vrs()
+        for layout in ("inline", "long"):
+            raw = build_image(sec, layout=layout)
+            tag = "sector=%d layout=%s" % (sec, layout)
+            assert probe(MemSub(raw)), "probe 失败 " + tag
+            udf = Udf(MemSub(raw))
+            inf = udf.info()
+            assert inf["udf_version"] == "1.02", inf["udf_version"]
+            assert inf["volume_id"] == "ESK_UDF_VOL", inf["volume_id"]
+            assert inf["sector_size"] == sec, inf["sector_size"]
+            assert inf["logical_block_size"] == sec, inf["logical_block_size"]
+            assert inf["partition_start"] == 65536 // sec, inf["partition_start"]
+            assert udf.vrs() == ["BEA01", "NSR02", "TEA01"], udf.vrs()
 
-        root = udf.root()
-        assert root.is_dir, root
-        names = sorted(e.name for e in udf.listdir())
-        assert names == ["HELLO.TXT", "SUB", "中文.TXT"], names
+            root = udf.root()
+            assert root.is_dir, root
+            assert root.ad_kind == (AD_LONG if layout == "long" else AD_INLINE)
 
-        assert udf.read_file(udf.lookup_path("/HELLO.TXT")) == HELLO
-        assert udf.read_file(udf.lookup_path("/中文.TXT")) == CJK
-        assert udf.read_file(udf.lookup_path("/SUB/INNER.BIN")) == INNER
-        assert udf.read_file(udf.lookup_path("sub/inner.bin")) == INNER
+            names_all = sorted(e.name for e in udf.listdir())
+            assert names_all == ["GONE.TXT", "HELLO.TXT", "SPARSE.DAT",
+                                 "SUB", "中文.TXT"], names_all
+            live = sorted(e.name for e in udf.listdir(include_deleted=False))
+            assert live == ["HELLO.TXT", "SPARSE.DAT", "SUB", "中文.TXT"], live
+            gone = [e for e in udf.listdir() if e.name == "GONE.TXT"][0]
+            assert gone.is_deleted and not gone.is_dir
 
-        paths = sorted(p for p, _ in udf.walk())
-        assert paths == ["HELLO.TXT", "SUB", "SUB/INNER.BIN", "中文.TXT"], paths
-        hits = [p for p, _ in udf.find("*.txt")]
-        assert sorted(hits) == ["HELLO.TXT", "中文.TXT"], hits
-        assert [p for p, _ in udf.find("inner")] == ["SUB/INNER.BIN"]
-        assert udf.stat(udf.lookup_path("/HELLO.TXT"))["size"] == len(HELLO)
+            assert udf.read_file(udf.lookup_path("/HELLO.TXT")) == HELLO
+            assert udf.read_file(udf.lookup_path("/中文.TXT")) == CJK
+            assert udf.read_file(udf.lookup_path("/SUB/INNER.BIN")) == INNER
+            assert udf.read_file(udf.lookup_path("sub/inner.bin")) == INNER
+            assert udf.read_file(udf.lookup_path("/SPARSE.DAT")) == SPARSE
+            assert udf.read_file(root) is None
 
-        print("UDF 自检通过 sector=%d: %s vol=%r blk=%d part@%d vrs=%s"
-              % (sec, inf["udf_version"], inf["volume_id"],
-                 inf["logical_block_size"], inf["partition_start"],
-                 "/".join(inf["vrs"])))
-        print("  根目录 %d 项: %s" % (len(names), ", ".join(names)))
-        print("  HELLO.TXT=%r 中文.TXT=%r SUB/INNER.BIN=%r"
-              % (udf.read_file(udf.lookup_path("/HELLO.TXT"))[:12],
-                 udf.read_file(udf.lookup_path("/中文.TXT")),
-                 udf.read_file(udf.lookup_path("/SUB/INNER.BIN"))))
+            paths = sorted(p for p, _ in udf.walk())
+            assert paths == ["GONE.TXT", "HELLO.TXT", "SPARSE.DAT", "SUB",
+                             "SUB/INNER.BIN", "中文.TXT"], paths
+            hits = sorted(p for p, _ in udf.find("*.txt"))
+            assert hits == ["GONE.TXT", "HELLO.TXT", "中文.TXT"], hits
+            assert [p for p, _ in udf.find("inner")] == ["SUB/INNER.BIN"]
+            assert udf.stat(udf.lookup_path("/HELLO.TXT"))["size"] == len(HELLO)
+            assert udf.lookup_path("/NOPE") is None
+
+            print("UDF 自检通过 %s: %s vol=%r blk=%d part@%d 目录 %d 项"
+                  % (tag, inf["udf_version"], inf["volume_id"],
+                     inf["logical_block_size"], inf["partition_start"],
+                     len(names_all)))
+            print("  HELLO.TXT=%r 中文.TXT=%r SUB/INNER.BIN=%r SPARSE=%dB"
+                  % (udf.read_file(udf.lookup_path("/HELLO.TXT"))[:12],
+                     udf.read_file(udf.lookup_path("/中文.TXT")),
+                     udf.read_file(udf.lookup_path("/SUB/INNER.BIN")),
+                     len(udf.read_file(udf.lookup_path("/SPARSE.DAT")))))
 
     # 主锚点被清零时，应能退回卷尾 N-1 锚点
     broken = bytearray(build_image(2048))

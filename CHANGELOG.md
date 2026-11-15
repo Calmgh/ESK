@@ -18,11 +18,18 @@
   - 未实现：TPM / .BEK / 用户口令（需外部密钥材料，只枚举）；CCM 的 MAC 校验（AAD 无公开定义，与 libbde 一致只做 CTR，`tag_verified=False`）
 
 - **`mkit/btrfs.py`** —— Btrfs
-  - 超级块（偏移 0x10000，`_BHRfS_M`）全字段
-  - `sys_chunk_array` → 逻辑/物理 chunk 映射，type 标志解码
-  - 树节点（`btrfs_header` + `btrfs_item` / `btrfs_key_ptr`）
-  - `logical_to_physical()` / `read_logical()` / `read_node()` / `root_tree()`
-  - **目录遍历与读文件未实现**，`listdir()` / `walk()` / `read_file()` / `find()` 一律抛 `NotImplementedError`（返回空列表会造成误判）
+  - 超级块（偏移 0x10000，`_BHRfS_M`）全字段 + dev_item + incompat 位域；
+    主副本缺失时回退 64M / 256G / 1T 三个镜像位置
+  - `sys_chunk_array`（17B key + chunk 交替，无对齐）**并与 chunk 树合并**
+    —— 数据 chunk 只存在于 chunk 树里，不合并读不到文件
+  - 树节点：`btrfs_header`(0x65) / `btrfs_item`(25) / `btrfs_key_ptr`(33)；
+    item 数据偏移以 leaf 数据区起点 0x65 为基准（不是节点起点）
+  - **目录遍历与读文件已完成**：root tree → ROOT_ITEM → FS_TREE/子卷 →
+    DIR_ITEM/DIR_INDEX 去重 → INODE_ITEM
+  - `read_file()` 支持 INLINE / REG / PREALLOC、空洞补零、跨 chunk 拼接、zlib
+  - 未实现：lzo / zstd / lz4（抛 `NotImplementedError`）、
+    校验和验证（标准库无 crc32c）、RAID5/6 重建、
+    已删除文件恢复（Btrfs 删 inode 后 DIR_ITEM 直接消失，无墓碑）
 
 - **`mkit/timeline.py`** —— 跨平台时间线
   - 6 种时间戳换算：Unix / FILETIME / HFS(1904) / APFS 纳秒 / FAT DOS（含 `tz_assumed` 标注）/ ext4（秒+纳秒）
@@ -55,6 +62,17 @@
   - `FsAdapter` 抹平各文件系统接口差异（按路径 / 按 inode / 按 entry 三种）
   - `session` 读 stdin 的 JSONL，逐行执行并回 JSON——便于脚本与代理编排
   - 端到端验证：合成 FAT16 镜像上 `images open` → `fs ls` → `fs find` → `fs cat` → `hash` → `search` → `session` 全通
+
+- **`mkit/udf.py`** —— UDF 1.02–2.01
+  - VRS（BEA01 / NSR02 / NSR03 / TEA01）识别，扇区 512 与 2048 都支持
+  - AVDP 主锚点（扇区 256）与尾部锚点，主锚点损坏可自动回退
+  - PVD / PD / LVD / USD / Terminating 描述符；descriptorTag 校验和验证
+  - FSD → 根 ICB → File Entry（tagId 261/266）→ FID 目录项
+  - 分配描述符：short_ad / long_ad / embedded(inline) 三种
+  - 文件名支持 8-bit 与 16-bit（compressed unicode），4 字节对齐填充
+  - 稀疏文件（extent 类型 2/3）、中文文件名
+  - `probe()` / `open_fs()` / `info()` / `listdir()` / `walk()` /
+    `read_file()` / `lookup_path()` / `find()`
 
 ### 修复
 

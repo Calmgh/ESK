@@ -15,12 +15,12 @@ __all__ = [
     "iosbackup_crypto", "ntfs", "ext4", "fat",
     "exfat", "xfs", "hfs", "squashfs",
     "cramfs", "romfs", "iso", "btrfs",
-    "macart", "hashcalc", "search", "carve",
-    "sqlite_forensic", "timeline", "stego", "chain",
-    "zipview", "winart", "winacct", "appdata",
-    "sysconf", "netart", "linuxart", "iosart",
-    "mobile", "mail", "heif", "online",
-    "regf", "revkit", "revkit_help",
+    "udf", "macart", "hashcalc", "search",
+    "carve", "sqlite_forensic", "timeline", "stego",
+    "chain", "zipview", "winart", "winacct",
+    "appdata", "sysconf", "netart", "linuxart",
+    "iosart", "mobile", "mail", "heif",
+    "online", "regf", "revkit", "revkit_help",
 ]
 
 # 模块用途速查
@@ -48,7 +48,8 @@ MODULE_DOC = {
     "cramfs": "CramFS v2",
     "romfs": "Linux ROMFS",
     "iso": "ISO 9660（含 Joliet / Rock Ridge）",
-    "btrfs": "Btrfs（超级块 / chunk 映射 / 树节点；遍历未实现）",
+    "btrfs": "Btrfs（超级块/chunk 树/目录遍历/读文件/zlib）",
+    "udf": "UDF 1.02-2.01（VRS/AVDP/PVD/FSD/FE/FID，long_ad 与 embedded）",
     "macart": "macOS 痕迹（APFS 见 ext/apfs_fs.py）",
     "hashcalc": "MD5 / SHA-1 / SHA-256 / SM3 与 EWF 采集哈希核对",
     "search": "多编码全局搜索",

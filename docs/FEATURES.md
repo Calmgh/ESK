@@ -23,7 +23,7 @@
 | QCOW2 | ✅ | **[*]** | `vdisk.Qcow2`（v2/v3） |
 | VDI | ✅ | **[*]** | `vdisk.Vdi` |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
-| UDF 1.02–2.01 | ✅ | `[ ]` | 计划（UDF 结构独立于 ISO9660，未实现） |
+| UDF 1.02–2.01 | ✅ | **[*]** | `udf`（VRS / AVDP 双锚点 / PVD·PD·LVD / FSD / FE / FID，short_ad·long_ad·embedded） |
 | AD1（FTK 逻辑镜像） | ✅ | **[~]** | `ad1`（段发现/头/块解压/目录树；ADCRYPT 未实现） |
 | DMG（Apple） | ✅ | **[*]** | `dmg`（koly/plist/mish/zlib/bzip2/LZMA；ADC·LZFSE 未实现） |
 | Parallels PHDI | ✅ | `[ ]` | 计划 |
@@ -79,8 +79,8 @@
 | HFS | ✅ | **[~]** | `hfs.Hfs`（MDB 解析；目录遍历抛 NotImplementedError） |
 | HFS+ / HFSX | ✅ | **[*]** | `hfs.HfsPlus`（卷头/备份卷头、Catalog B-tree、extents overflow、UTF-16BE 名） |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
-| UDF | ✅ | `[ ]` | 计划 |
-| Btrfs | ✅ | **[~]** | `btrfs`（超级块/chunk 映射/树节点；**不能遍历、不能读文件**） |
+| UDF | ✅ | **[*]** | `udf`（同上） |
+| Btrfs | ✅ | **[*]** | `btrfs`（超级块 / chunk 树合并 / 目录遍历 / 读文件 / zlib） |
 | ZFS | ✅ | `[ ]` | 计划（体量大，优先级低） |
 | XFS | ✅ | **[~]** | `xfs`（超级块/AG 头/短格式目录/extent 文件；b-tree 格式 inode 未支持） |
 | ReFS | ✅ | `[ ]` | 计划 |
@@ -105,8 +105,8 @@
 | bcachefs | ✅ | `[ ]` | 计划 |
 | **exFAT（ESK 独有前置）** | ✅ | **[*]** | 见上 |
 
-> **小结**：文件系统 33 种里，ESK 已覆盖 12 种（NTFS / ext / FAT / exFAT / APFS / ISO9660 / HFS+ / XFS / SquashFS / CramFS / ROMFS / Btrfs 部分），
-> 其余 21 种为计划项。这是最大的差距，也是后续工作的主线。
+> **小结**：文件系统 33 种里，ESK 已覆盖 13 种（NTFS / ext / FAT / exFAT / APFS / ISO9660 / UDF / HFS+ / XFS / SquashFS / CramFS / ROMFS / Btrfs），
+> 其余 20 种为计划项。这是最大的差距，也是后续工作的主线。
 
 ## 五、加密与快照
 
