@@ -113,7 +113,7 @@
 | 类型 | LovelyCarve | ESK | 模块 / 说明 |
 |---|:---:|:---:|---|
 | LUKS1 / LUKS2 | ✅ | **[~]** | `luks`（**只解头，不解锁**） |
-| BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码解锁 + XTS/CBC/diffuser；TPM·BEK 只枚举） |
+| BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码 + .BEK 启动密钥解锁、XTS/CBC/diffuser；TPM·口令只枚举） |
 | VeraCrypt | ✅ | `[ ]` | 计划 |
 | FileVault 2 | ✅ | `[ ]` | 计划 |
 | Windows EFS | — | `[ ]` | 计划 |

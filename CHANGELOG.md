@@ -3,6 +3,42 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.1] - 2026-11-15
+
+BitLocker 补上启动密钥（.BEK）。
+
+### 新增
+
+- **`mkit/bitlocker.py`** —— 启动密钥（.BEK / external key）
+  - `parse_bek()`：解析 .BEK 文件（常见 156 字节）——48 字节头（版本 1、
+    元数据长度、卷 GUID、next nonce、encryption method、创建时间）+
+    FVE external key（value_type 0x0009 = GUID(16) + FILETIME(8) + 属性数组），
+    从属性里 entry type 0 的条目取出 256 位未加密密钥材料
+  - `BitLocker.unlock_with_startup_key()`：与恢复密码同一套 stretch + AES-CCM
+    通路，只把 initial_sha256 换成 BEK 密钥材料；按 `SHA256(材料)` 与原始材料
+    两种候选依次试解，成不成立由解密后密钥块的结构自校验决定
+  - 自检新增第 12 节：合成 StartupKey 保护器 + 配套 .BEK，覆盖 bytes / dict /
+    文件路径三种入参、错误 BEK 返回 None、5 类非法输入、无保护器时的报错
+
+### 修复
+
+- **卷内 `value_type 0x0009` 的语义弄错了。** 按 libbde「FVE External Key」
+  一节，它是 `GUID(16) + FILETIME(8) + 属性数组` 的 .BEK **GUID 引用**，
+  不是密文。原先写成 `protector.ciphertext = child.data`，当 0x0009 排在
+  stretch key 之后时会把 stretch key 里正确的 CCM 密文覆盖掉。现改为记录到
+  `KeyProtector.external_key_guid`。
+- **`parse_bek()` 的兜底分支会把 GUID 当密钥。** BEK 里的密钥材料不足 32 字节时，
+  兜底逻辑原先会取 0x0009 条目自身的前 32 字节（那里是 GUID + FILETIME），
+  于是一个残缺的 BEK 会被当成解析成功。现改为跳过 `value_type 0x0009`。
+
+### 边界
+
+- 启动密钥路径按公开结构实现，但**没有真实 .BEK 文件与配套加密卷做回归**，
+  结果只作参考；文档未写死 initial_sha256 的取法，所以实现里保留两种候选试解
+- TPM / TPM+PIN / 用户口令保护器仍需外部密钥材料（TPM 密封数据、
+  口令编码规则），只枚举不推导
+
+
 ## [1.5.0] - 2026-11-15
 
 补 7 个模块：BitLocker、Btrfs、时间线、AD1、DMG、三张非 x86 分区表，以及 CLI。

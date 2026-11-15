@@ -52,12 +52,26 @@ AES 原语来自 mkit.aes（纯标准库自研实现）。
      XOR 32 字节扇区密钥，扇区密钥 = E(TWEAK, off) || E(TWEAK, off | 0x80<<120)）
    · 0x8002 / 0x8003：CBC
    · 0x8004 / 0x8005：XTS（FVEK 内含两把 XTS 子钥）
+8. 启动密钥（.BEK / external key）
+   · `parse_bek()` 解析 .BEK 文件（常见 156 字节）：48 字节头（版本 1、
+     元数据长度、卷 GUID、next nonce、encryption method、创建时间）+
+     FVE external key（value_type 0x0009 = GUID(16) + FILETIME(8) + 属性数组），
+     从属性里 entry type 0 的条目取出 256 位未加密密钥材料
+   · `unlock_with_startup_key()`：与恢复密码同一套 stretch + AES-CCM 通路，
+     只是 initial_sha256 换成 BEK 密钥材料——按 SHA256(材料) 与原始材料
+     两种候选依次试解，由解密后密钥块的结构校验决定是否成立
+   · 卷内 value_type 0x0009 按格式文档识别为 .BEK 的 GUID 引用
+     （`KeyProtector.external_key_guid`），**不再**当成 CCM 密文
 
 ============================================================================
 不实现（明确边界，绝不假装能解）
 ============================================================================
-· TPM / TPM+PIN / startup key(.BEK) / 用户口令保护器：需要外部密钥材料
-  （TPM 密封数据、BEK 文件、口令编码规则），本文件只枚举不推导
+· TPM / TPM+PIN / 用户口令保护器：需要外部密钥材料（TPM 密封数据、
+  口令编码规则），本文件只枚举不推导
+· 启动密钥（.BEK）：解析与解锁已实现（见下），但**没有真实 .BEK 文件与
+  配套加密卷做回归**，结果只作参考；文档未写死 initial_sha256 的取法，
+  本实现按「SHA256(BEK 密钥材料)」与「原始密钥材料」两种候选依次试解，
+  能否解出由密钥块结构自校验决定
 · AES-CCM 的 MAC（tag）校验：BitLocker 的 AAD 组成在公开资料里没有确切定义，
   libbde 同样只做 CTR。本实现如实标注 `tag_verified=False`，改用明文结构
   （size 与 version）做 4 字节级校验；不声称已验签
@@ -97,7 +111,7 @@ __all__ = [
     "diffuser_encrypt", "diffuser_decrypt",
     "xts_encrypt", "xts_decrypt",
     "ccm_encrypt", "ccm_decrypt", "ccm_ctr_crypt",
-    "stretch_key", "parse_recovery_password",
+    "stretch_key", "parse_recovery_password", "parse_bek",
     "SIGNATURE", "SECTOR_SIZE", "STRETCH_ITERATIONS",
     "ENTRY_TYPES", "VALUE_TYPES", "PROTECTION_TYPES", "METHODS",
 ]
@@ -440,6 +454,113 @@ def parse_recovery_password(text):
     return bytes(out)
 
 
+# --------------------------------------------------------------------------
+# BEK（BitLocker External Key）文件
+# --------------------------------------------------------------------------
+BEK_HEADER_SIZE = 48
+
+
+def parse_bek(source):
+    """解析 .BEK 文件，取出其中 32 字节未加密的密钥材料
+
+    格式依据 libbde「BitLocker BDE format」文档的「BitLocker External Key
+    (BEK) file」一节：文件常见 156 字节，由 48 字节文件头 + 元数据条目组成。
+
+        偏移 0   u32  元数据大小（含该字段自身，指剩余数据长度）
+        偏移 4   u32  版本，应为 1
+        偏移 8   u32  元数据头长度，应为 48
+        偏移 12  u32  元数据大小副本
+        偏移 16  16B  卷标识（GUID）
+        偏移 32  u32  next nonce counter
+        偏移 36  u32  encryption method
+        偏移 40  u64  创建时间（FILETIME）
+
+    头部之后是元数据条目。文档写明「BEK 文件里的元数据是一个 FVE external
+    key，其中含 256 位未加密的密钥数据」；FVE external key（value_type
+    0x0009）的结构是 GUID(16) + FILETIME(8) + 属性数组，属性数组里
+    entry type 0 的条目才是那 32 字节。
+
+    source: 文件路径（str / Path）或原始 bytes
+
+    返回 dict：volume_guid / key_guid / encryption_method / method_name /
+              creation_time / next_nonce / key_data / source_size
+    """
+    if isinstance(source, (bytes, bytearray)):
+        raw = bytes(source)
+    else:
+        with open(source, "rb") as f:
+            raw = f.read()
+
+    if len(raw) < BEK_HEADER_SIZE:
+        raise ValueError("BEK 文件太短：%d 字节（至少 %d 字节）"
+                         % (len(raw), BEK_HEADER_SIZE))
+
+    meta_size = struct.unpack_from("<I", raw, 0)[0]
+    version = struct.unpack_from("<I", raw, 4)[0]
+    header_size = struct.unpack_from("<I", raw, 8)[0]
+    volume_guid = raw[16:32]
+    next_nonce = struct.unpack_from("<I", raw, 32)[0]
+    enc_method = struct.unpack_from("<I", raw, 36)[0]
+    creation = struct.unpack_from("<Q", raw, 40)[0]
+
+    if version != 1:
+        raise ValueError("BEK 文件版本应为 1，实际读到 %d" % version)
+    if header_size < BEK_HEADER_SIZE:
+        raise ValueError("BEK 头部声明长度 %d 小于 %d"
+                         % (header_size, BEK_HEADER_SIZE))
+    if header_size > len(raw):
+        raise ValueError("BEK 头部长度 %d 超出文件大小 %d"
+                         % (header_size, len(raw)))
+
+    end = len(raw)
+    if BEK_HEADER_SIZE <= meta_size <= len(raw):
+        end = meta_size
+
+    entries = _walk_entries(raw, header_size, end)
+
+    key_data = None
+    key_guid = None
+    for entry in entries:
+        if entry.value_type != 0x0009:
+            continue
+        body = entry.data
+        if len(body) < 24:
+            continue
+        key_guid = body[0:16]
+        # 属性数组：entry type 0 的条目承载 256 位密钥材料
+        for prop in _walk_entries(body, 24, len(body)):
+            if prop.type == 0 and len(prop.data) >= 32:
+                key_data = prop.data[0:32]
+                break
+        if key_data is None and len(body) >= 24 + 32:
+            key_data = body[24:24 + 32]
+        break
+
+    # 兜底：顶层直接就是 entry type 0 且带 32 字节以上数据。
+    # 必须跳过 value_type 0x0009 —— 那种条目的前 24 字节是 GUID + FILETIME，
+    # 不是密钥材料，否则不足 32 字节的 BEK 会被误判为成功。
+    if key_data is None:
+        for entry in entries:
+            if entry.type == 0 and entry.value_type != 0x0009 \
+                    and len(entry.data) >= 32:
+                key_data = entry.data[0:32]
+                break
+
+    if key_data is None:
+        raise ValueError("BEK 文件里没找到 256 位（32 字节）密钥材料")
+
+    return {
+        "volume_guid": volume_guid.hex(),
+        "key_guid": key_guid.hex() if key_guid else None,
+        "encryption_method": enc_method,
+        "method_name": method_name(enc_method),
+        "creation_time": filetime_to_string(creation),
+        "next_nonce": next_nonce,
+        "key_data": key_data,
+        "source_size": len(raw),
+    }
+
+
 def stretch_key(initial_hash, salt, iterations=STRETCH_ITERATIONS):
     """BitLocker 的密钥拉伸
 
@@ -493,7 +614,8 @@ class KeyProtector(object):
 
     __slots__ = ("type_id", "guid", "is_active", "description", "salt",
                  "stretch_method", "nonce", "tag", "ciphertext", "clear_key",
-                 "entry_offset", "version", "modification_time", "children")
+                 "entry_offset", "version", "modification_time", "children",
+                 "external_key_guid")
 
     def __init__(self, type_id, guid, entry_offset=0, version=0):
         self.type_id = type_id
@@ -509,6 +631,7 @@ class KeyProtector(object):
         self.ciphertext = None
         self.clear_key = None
         self.modification_time = None
+        self.external_key_guid = None
         self.children = []
 
     @property
@@ -864,8 +987,14 @@ class BitLocker(object):
             elif child.value_type == 0x0001:                      # Key（FVE key 结构）
                 protector.clear_key = child.data[4:4 + 32] if len(child.data) > 4 \
                     else child.data
-            elif child.value_type == 0x0009:                      # 外部密钥（.BEK）
-                protector.ciphertext = child.data
+            elif child.value_type == 0x0009:                      # FVE External Key
+                # 依据 libbde「BitLocker BDE format」的「FVE External Key」一节：
+                # value_type 0x0009 的结构是 GUID(16) + FILETIME(8) + 属性数组，
+                # 它是 .BEK 文件的 GUID 引用，不是密文。原先写成
+                # `protector.ciphertext = child.data` 会在 0x0009 排在 stretch key
+                # 之后时，把 stretch key 里正确的 CCM 密文覆盖掉。
+                if len(child.data) >= 16:
+                    protector.external_key_guid = child.data[0:16]
 
         protector.is_active = bool(protector.ciphertext)
         return protector
@@ -982,6 +1111,50 @@ class BitLocker(object):
             if blob is None or len(blob["key_data"]) < 32:
                 continue
             return blob["key_data"][:32]
+        return None
+
+    def unlock_with_startup_key(self, bek, stretch_iterations=STRETCH_ITERATIONS):
+        """用 .BEK 文件（启动密钥）解出 VMK（32 字节）；解不出返回 None
+
+        结构上启动密钥保护的 VMK 与恢复密码完全一致——libbde 文档的
+        「The startup key protected VMK consists of」一节写的是：描述串 +
+        stretch key + AES-CCM 加密的密钥。差别只在 initial_sha256 的来源：
+        恢复密码是 SHA256(128 位口令)，启动密钥是 BEK 里那 256 位密钥材料。
+
+        文档没有把启动密钥的 initial_sha256 取法写死（恢复密码是单次
+        SHA256、用户口令是两次 SHA256），所以这里把两种合理取法都试一遍，
+        用 `_parse_key_blob` 能否解出结构合法的密钥块来判定——取法错时它会
+        返回 None，不会静默给出乱码密钥。
+
+        bek: 文件路径 / bytes / parse_bek() 的返回值
+
+        注意：本路径按公开结构实现，但手上没有真实的 .BEK 文件与配套加密卷
+        做回归，结果只作参考。
+        """
+        info = bek if isinstance(bek, dict) else parse_bek(bek)
+        material = info.get("key_data")
+        if not material or len(material) != 32:
+            raise ValueError("BEK 密钥材料应为 32 字节，实际 %s"
+                             % (len(material) if material else "无"))
+
+        candidates = [p for p in self.vmks
+                      if p.type_id == 0x0200 and p.salt and p.ciphertext
+                      and p.nonce is not None]
+        if not candidates:
+            names = ", ".join(sorted({p.type_name for p in self.vmks})) or "无"
+            raise NotImplementedError(
+                "该卷没有可用的启动密钥保护器（需要 type=0x0200 且带 stretch key、"
+                "nonce 与 AES-CCM 密文）；现有保护器：%s" % names)
+
+        initials = [hashlib.sha256(material).digest(), material]
+        for protector in candidates:
+            for initial in initials:
+                key = stretch_key(initial, protector.salt, stretch_iterations)
+                plain = ccm_ctr_crypt(key, protector.nonce, protector.ciphertext)
+                blob = _parse_key_blob(plain)
+                if blob is None or len(blob["key_data"]) < 32:
+                    continue
+                return blob["key_data"][:32]
         return None
 
     def unlock_with_clear_key(self):
@@ -1218,7 +1391,7 @@ if __name__ == "__main__":
         return nonce + tag + ctext
 
     def build_image(method, vmk, fvek_data, recovery_pw, iterations,
-                    sector_number=100, sector_plain=None):
+                    sector_number=100, sector_plain=None, startup_key_data=None):
         """构造一个带完整元数据与一个加密扇区的合成 BitLocker 镜像"""
         image_size = 0x400000
         meta_offsets = (0x100000, 0x2000, image_size - 0x10000)
@@ -1240,6 +1413,28 @@ if __name__ == "__main__":
                        + struct.pack("<HH", 0x0002, 0x0800)          # unknown, RecoveryPassword
                        + desc_prop + stretch_prop)
 
+        # ---- 启动密钥（.BEK）保护器：同一个 VMK，换成 BEK 密钥材料派生 ----
+        extra_vmk = b""
+        bek_key_guid = bytes(range(0x30, 0x40))
+        if startup_key_data is not None:
+            bek_salt = bytes(range(0x50, 0x60))
+            bek_stretch = stretch_key(hashlib.sha256(startup_key_data).digest(),
+                                      bek_salt, iterations)
+            bek_nonce = bytes(range(0xC0, 0xCC))
+            bek_ccm = _ccm_entry(bek_stretch, bek_nonce, vmkey_blob)
+            bek_stretch_prop = _entry(0x0000, 0x0003,
+                                      struct.pack("<I", 0x1000) + bek_salt
+                                      + _entry(0x0000, 0x0005, bek_ccm))
+            bek_desc = _entry(0x0000, 0x0002,
+                              "ExternalKey\x00".encode("utf-16-le"))
+            # 0x0009 是 .BEK 的 GUID 引用（GUID(16) + FILETIME(8)），不是密文
+            bek_ref = _entry(0x0000, 0x0009,
+                             bek_key_guid + struct.pack("<Q", 0x01D0000000000000))
+            extra_vmk = (bytes(range(0x11, 0x21))                    # GUID
+                         + struct.pack("<Q", 0x01D0000000000000)     # FILETIME
+                         + struct.pack("<HH", 0x0002, 0x0200)        # StartupKey
+                         + bek_desc + bek_stretch_prop + bek_ref)
+
         # ---- FVEK：用 VMK 做 CCM ----
         fvek_blob = struct.pack("<IHHI", 12 + len(fvek_data), 1, 0, method) + fvek_data
         fvek_payload = _ccm_entry(vmk, bytes(range(0xB0, 0xBC)), fvek_blob)
@@ -1252,6 +1447,8 @@ if __name__ == "__main__":
             _entry(0x0004, 0x0007, bytes(16)),                       # Validation
             _entry(0x0007, 0x0002, description.encode("utf-16-le") + b"\x00\x00"),
             _entry(0x000F, 0x000F, struct.pack("<QQ", meta_offsets[0], 0x10000)),
+            # 第二个 VMK（启动密钥）；没要求时留空，不影响原有布局
+            (_entry(0x0002, 0x0008, extra_vmk) if extra_vmk else b""),
         ])
 
         metadata_size = METADATA_HEADER_SIZE + len(entries)
@@ -1547,4 +1744,111 @@ if __name__ == "__main__":
 
     print("\ndescribe(): %s" % bde.describe())
     print("describe(非 BitLocker): %s" % describe(MemSub(bytes(4096))))
+
+    # ------------------------------------------------------------------
+    print("\n=== 12) 启动密钥（.BEK）===")
+    BEK_KEY = bytes(range(0xE0, 0x100))                  # 32 字节密钥材料
+    sub4, _ = build_image(0x8004, VMK, FVEK_XTS, PW, 1024,
+                          startup_key_data=BEK_KEY)
+    bde4 = BitLocker(sub4)
+
+    types4 = sorted({p.type_name for p in bde4.vmks})
+    print("  保护器:", types4)
+    assert "StartupKey" in types4 and "RecoveryPassword" in types4, types4
+
+    sk = [p for p in bde4.vmks if p.type_id == 0x0200][0]
+    print("  StartupKey: salt=%s nonce=%s 密文=%d B external_key_guid=%s"
+          % (sk.salt.hex() if sk.salt else None,
+             sk.nonce.hex() if sk.nonce else None,
+             len(sk.ciphertext) if sk.ciphertext else 0,
+             sk.external_key_guid.hex()[:8] if sk.external_key_guid else None))
+    # 0x0009 是 GUID 引用，不能把 stretch key 里的密文覆盖掉
+    assert sk.salt is not None and sk.nonce is not None and sk.ciphertext
+    assert sk.external_key_guid is not None, "0x0009 的 GUID 没被记录"
+    assert sk.is_active is True
+
+    # ---- 构造对应的 .BEK 文件（48 字节头 + FVE external key）----
+    def make_bek(key_material, method=0x8004, key_guid=None, version=1,
+                 volume_guid=None):
+        key_guid = key_guid or bytes(range(0x30, 0x40))
+        volume_guid = volume_guid or bytes(range(0x70, 0x80))
+        body = _entry(0x0000, 0x0009,
+                      key_guid
+                      + struct.pack("<Q", 0x01D0000000000000)
+                      + _entry(0x0000, 0x0000, key_material))
+        meta_size = BEK_HEADER_SIZE + len(body)
+        head = (struct.pack("<IIII", meta_size, version, BEK_HEADER_SIZE, meta_size)
+                + volume_guid
+                + struct.pack("<I", 0x1234)               # next nonce
+                + struct.pack("<I", method)               # encryption method
+                + struct.pack("<Q", 0x01D0000000000000))  # 创建时间
+        return head + body
+
+    bek = make_bek(BEK_KEY)
+    print("  BEK 文件 %d 字节" % len(bek))
+
+    info_bek = parse_bek(bek)
+    print("  parse_bek: method=0x%04X key=%s guid=%s"
+          % (info_bek["encryption_method"], info_bek["key_data"].hex()[:16],
+             (info_bek["key_guid"] or "")[:8]))
+    assert info_bek["key_data"] == BEK_KEY, "BEK 密钥材料不符"
+    assert info_bek["key_guid"] == bytes(range(0x30, 0x40)).hex()
+    assert info_bek["encryption_method"] == 0x8004
+    assert info_bek["volume_guid"] == bytes(range(0x70, 0x80)).hex()
+
+    # ---- 用 BEK 解出 VMK ----
+    vmk_bek = bde4.unlock_with_startup_key(bek, 1024)
+    print("  unlock_with_startup_key -> VMK %s" % (vmk_bek.hex() if vmk_bek else None))
+    assert vmk_bek == VMK, "BEK 解出的 VMK 不符"
+
+    # 也接受 parse_bek 的返回值
+    assert bde4.unlock_with_startup_key(info_bek, 1024) == VMK
+    # 也接受文件路径
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".BEK", delete=False) as fh:
+        fh.write(bek)
+        bek_path = fh.name
+    try:
+        assert bde4.unlock_with_startup_key(bek_path, 1024) == VMK
+        print("  文件路径入参 OK")
+
+        # 错误密钥材料 -> None（不会给出乱码密钥）
+        bad = make_bek(bytes(range(0x00, 0x20)))
+        assert bde4.unlock_with_startup_key(bad, 1024) is None, "错误 BEK 应返回 None"
+        print("  错误 BEK -> None OK")
+    finally:
+        pass
+
+    # ---- 非法输入 ----
+    for label, blob, expect in (
+            ("截断（短于 48 字节）", b"\x00" * 20, ValueError),
+            ("版本不为 1", make_bek(BEK_KEY, version=2), ValueError),
+            ("头部长度非法", make_bek(BEK_KEY)[:8] + struct.pack("<I", 12)
+             + make_bek(BEK_KEY)[12:], ValueError),
+            ("没有 0x0009 条目", struct.pack("<IIII", 48, 1, 48, 48)
+             + bytes(32), ValueError),
+    ):
+        try:
+            parse_bek(blob)
+        except expect as exc:
+            print("  %s -> %s: %s" % (label, expect.__name__, str(exc)[:44]))
+        else:
+            raise AssertionError("%s 应抛 %s" % (label, expect.__name__))
+
+    # 短材料的 BEK（不足 32 字节）应报错
+    try:
+        parse_bek(make_bek(b"\x11" * 8))
+    except ValueError as exc:
+        print("  材料不足 32 字节 -> ValueError: %s" % str(exc)[:44])
+    else:
+        raise AssertionError("材料不足 32 字节应抛 ValueError")
+
+    # ---- 没有启动密钥保护器的卷 ----
+    bde5 = BitLocker(build_image(0x8004, VMK, FVEK_XTS, PW, 1024)[0])
+    try:
+        bde5.unlock_with_startup_key(bek)
+        raise AssertionError("没有 StartupKey 保护器却未报错")
+    except NotImplementedError as exc:
+        print("  无 StartupKey 保护器 -> NotImplementedError: %s" % str(exc)[:44])
+
     print("\nBitLocker 自检全部通过")

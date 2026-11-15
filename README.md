@@ -246,7 +246,7 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 | `hfs.py` | 60.5 KB | **HFS / HFS+ / HFSX**：卷头、Catalog B-tree、extents overflow |
 | `xfs.py` | 51.7 KB | **XFS v4/v5**：超级块、AG 头、短格式目录、extent 文件 |
 | `sqlite_forensic.py` | 62.2 KB | **SQLite 取证**：WAL 回放、删除记录恢复、已删表检测 |
-| `bitlocker.py` | 68.7 KB | **BitLocker**：恢复密码解锁、AES-XTS/CBC、Elephant diffuser |
+| `bitlocker.py` | 83.0 KB | **BitLocker**：恢复密码与 .BEK 启动密钥解锁、AES-XTS/CBC、Elephant diffuser |
 | `btrfs.py` | 63.6 KB | **Btrfs**：超级块、chunk 树合并、目录遍历、读文件、zlib |
 | `udf.py` | 51.1 KB | **UDF** 1.02–2.01：VRS、双锚点、FSD/FE/FID、short_ad·long_ad·embedded |
 | `timeline.py` | 56.2 KB | **时间线**：6 种时间戳换算、CSV/JSONL/SQLite 导出 |
