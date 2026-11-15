@@ -67,7 +67,7 @@
 
 | 部分 | 内容 | 规模 |
 |---|---|---|
-| **`mkit/`** | 核心库：镜像、分区、NTFS/ext4/APFS、注册表、隐写、钱包、各平台痕迹 | 28 个模块 / 25,982 行 |
+| **`mkit/`** | 核心库：镜像与容器、NTFS/ext4/FAT、APFS、注册表、哈希、搜索、雕刻、隐写、钱包、加密头、各平台痕迹 | **34 个模块 / 约 27,700 行** |
 | **`ext/`** | 实战中补写的扩展：APFS 文件级读取、VMDK/LVM2/VHDX、RAID5 重建、像素级比对等 | 34 个模块 |
 
 **适合谁用**：做 CTF 取证题、做真实案件的初检、写自动化提取脚本、需要绕开商业工具限制的场景。
@@ -240,6 +240,12 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 | `revkit.py` | 84 KB | 逆向套件 |
 | `revkit_help.py` | 8.6 KB | 逆向辅助 |
 | `zipview.py` | 3.9 KB | 压缩包只读浏览 |
+| `hashcalc.py` | 9.3 KB | **哈希校验**：MD5 / SHA-1 / SHA-256 / **SM3**（纯 Python）、EWF 采集哈希核对、目录树哈希 |
+| `search.py` | 9.0 KB | **多编码全局搜索**：ASCII / UTF-8 / UTF-16LE·BE / GBK，关键词或正则，可导出 CSV |
+| `carve.py` | 12.6 KB | **签名雕刻**：16 种格式，按长度/结束标记/截断三种定尾策略 |
+| `fat.py` | 12.1 KB | **FAT12/16/32**：BPB、簇链、LFN 长文件名、**删除项**、未分配簇枚举 |
+| `vdisk.py` | 11.6 KB | **QCOW2 v2/v3 + VirtualBox VDI**：块映射、稀疏块补零、自动识别 |
+| `luks.py` | 8.9 KB | **LUKS1 / LUKS2 头部解析**：算法、密钥槽、PBKDF2 迭代、LUKS2 JSON 元数据 |
 
 ### 4.2 扩展 `ext/`
 
@@ -260,6 +266,12 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 - 隐写检测（JPEG 尾部追加、PNG LSB、零宽字符）
 - 钱包助记词、密钥材料提取
 - iOS 备份解密、HEIC 解码
+- **哈希校验** MD5 / SHA-1 / SHA-256 / SM3，含 EWF 采集哈希核对
+- **全局搜索** 覆盖 ASCII / UTF-8 / UTF-16LE·BE / GBK，支持正则与未分配空间
+- **文件雕刻** 16 种格式（JPEG/PNG/GIF/BMP/PDF/ZIP/RAR/7z/GZIP/RTF/SQLite/OLE2/PE/ELF/MP4/RIFF）
+- **FAT12/16/32** 完整读取，含长文件名与删除项恢复
+- **QCOW2 / VDI** 虚拟机磁盘，稀疏块自动补零
+- **LUKS1 / LUKS2** 头部识别与密钥槽枚举
 
 **做不到**
 
@@ -268,6 +280,10 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 - 回收站/未分配簇的通用恢复 —— 各平台各有专门工具
 - 内存镜像 —— 本包不含，请用 Volatility 3
 - 写证据 —— 设计上只读
+- **LUKS 解锁** —— 只解析头部，不派生密钥；`af_split/af_merge` 未在真卷上验证，不进发行版
+- **BitLocker / VeraCrypt / FileVault 2** —— 未实现
+- **HFS+ / Btrfs / XFS / SquashFS / YAFFS** —— 未实现
+- **AD1 / DMG / QCOW 之外的商业镜像** —— 未实现
 
 ---
 
@@ -493,7 +509,7 @@ ESK/
 ├── README.md               本文件
 ├── requirements.txt
 ├── VERSION
-├── mkit/                   核心库（28 模块 / 25,982 行）
+├── mkit/                   核心库（34 模块 / 约 27,700 行）
 ├── ext/                    自建扩展（34 模块）
 │   └── __init__.py
 ├── examples/               可运行示例（6 个）
@@ -521,6 +537,11 @@ ESK/
 | RAID5 layout | 只实现 left-symmetric | 其他 layout（left-asymmetric / right-*）未覆盖 |
 | VHDX | 基础读取 | 未实现日志回放 |
 | 内存镜像 | 不含 | 请用 Volatility 3 |
+| LUKS 解锁 | 未实现 | 仅头部解析（算法/槽/PBKDF2 迭代）；`af_merge` 分支合并未在真卷验证，不放进发行版 |
+| FAT32 | 已实现未实测 | BPB/簇链/LFN 逻辑覆盖，但只在合成 FAT16 上做过回归；真实 FAT32 卷待验 |
+| exFAT | 未实现 | — |
+| HFS+ / Btrfs / XFS | 未实现 | — |
+| BitLocker / VeraCrypt / FileVault 2 | 未实现 | — |
 
 **用法建议**：把本包当作"文件系统层与磁盘容器层的工具"，内存与高层应用分析另找工具配合。
 

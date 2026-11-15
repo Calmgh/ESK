@@ -3,6 +3,97 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-11-15
+
+继续对标 LovelyCarve 补文件系统与容器。
+
+### 新增
+
+- **mkit/exfat.py** —— exFAT
+  - VBR 解析（含 4Kn 扇区、双 FAT 标记）
+  - 目录项三种类型：0x85 文件项 / 0xC0 流扩展 / 0xC1 文件名
+  - 长文件名、时间戳、删除标记（条目类型 bit7）
+  - NoFatChain 连续分配与簇链两种读取路径
+  - unallocated_ranges() 供雕刻
+
+- **mkit/iso.py** —— ISO 9660（含 Joliet / Rock Ridge）
+  - 卷描述符扫描，优先 Joliet（UCS-2BE 文件名）
+  - 目录记录双端字段解析、;1 版本号剥离
+  - Rock Ridge 的 NM 替代名（POSIX 长名）
+  - 递归遍历、按路径查找
+
+- **docs/FEATURES.md** —— 功能覆盖矩阵
+  - 逐项对照 LovelyCarve v1.3.0 的容器/文件系统/加密/分析能力
+  - 标注 [*] 已实现并测试 / [~] 已实现未实测 / [ ] 未实现 / [-] 不做
+  - 当前：26 项已实现并测试，5 项部分实现，65 项计划
+  - 附「ESK 独有能力」与「推进顺序」
+
+### 修复
+
+- exfat.py 目录项类型比较漏了 in-use 位掩码：etype & 0x7F 得到 0x05，
+  却拿去和 0x85 比，导致根目录永远解析为 0 项。改为比较 ENTRY_FILE_M = 0x05。
+
+### 已知问题
+
+- UDF 未实现（结构与 ISO9660 完全不同）
+- HFS / HFS+ 未实现
+- exFAT 只在合成镜像上验过
+
+## [1.1.0] - 2026-11-15
+
+补 6 个模块，主要对着 LovelyCarve 的能力面找自己的空白。
+
+### 新增
+
+- **`mkit/hashcalc.py`** —— 哈希与校验
+  - MD5 / SHA-1 / SHA-256 / **SM3**（GB/T 32905-2016，纯 Python 实现）
+  - `stream_hash()` 分块流式，任意大小的镜像都不吃内存
+  - `verify_ewf_hash()` 读 EWF 头部记录的采集哈希并重新计算比对
+  - `tree_hash()` 目录树哈希
+  - SM3 通过三条标准测试向量
+
+- **`mkit/search.py`** —— 多编码全局搜索
+  - ASCII / UTF-8 / UTF-16LE / UTF-16BE / GBK
+  - 关键词与正则，宽编码下按 2 字节步进换算偏移
+  - 分块扫描 + overlap，跨块边界不漏命中
+  - `to_csv()` 导出 Excel 友好格式
+
+- **`mkit/carve.py`** —— 签名文件雕刻
+  - 16 种格式：JPEG PNG GIF BMP PDF ZIP RAR 7z GZIP RTF SQLite OLE2 PE ELF MP4 RIFF
+  - 三种定尾策略：**LENGTH**（从头部算长度，最可靠）/ **TAIL**（找结束标记 + 校验）/ **CAP**（截断并标记）
+  - SQLite 用 page_size × page_count 精确算长；PE 用节表算真实大小
+  - `carve_unallocated()` 接未分配区间迭代器
+
+- **`mkit/fat.py`** —— FAT12/16/32
+  - 标准簇数阈值判定类型（先用 fat16 试算，超 65525 才认 FAT32）
+  - 簇链跟踪、8.3 短名 + VFAT 长名、已删除条目（首字节 0xE5）
+  - `unallocated_ranges()` 供雕刻使用
+
+- **`mkit/vdisk.py`** —— QCOW2 v2/v3 与 VirtualBox VDI
+  - QCOW2：L1→L2→数据簇三级映射，稀疏块补零，标志位掩码 `& 0x00FFFFFFFFFFFE00`
+  - VDI：block map 解析，`0xFFFFFFFF` 视为未分配
+  - `open_disk()` 按魔数自动识别 VMDK / QCOW2 / VDI
+
+- **`mkit/luks.py`** —— LUKS1 / LUKS2 头部解析
+  - LUKS1：cipher / mode / hash / payload offset / 8 个密钥槽的激活状态与 PBKDF2 迭代
+  - LUKS2：JSON 元数据（偏移 4096）里的 cipher / pbkdf / slots / digests / segments
+  - `strength_note()` 按迭代次数给密码强度线索
+  - **不解锁**：`af_split/af_merge` 未在真实卷上验证，见「已知问题」
+
+### 修复
+
+- `fat.py` 初版把 `fat_size` 无条件从偏移 36 读（那是 FAT16 的 EBPB `drive_number`），
+  导致 FAT16 镜像被误判、`data_off` 算到 TB 级。改为标准算法：先按 fat16 试算簇数，超阈值才读 fat32。
+- `fat.py` 的 `volume_id` 偏移写反了（FAT32 应是 67，FAT16 是 39）。
+- `luks.py` LUKS2 的 JSON 元数据应从**偏移 4096**（二进制头之后）读，不是 `header_size`。
+- `luks.py` LUKS2 的 JSON 数值有 int 和 str 两种写法，加了 `_int()` 归一。
+
+### 已知问题
+
+- LUKS 只做到头部，不解锁。
+- FAT32 只在合成镜像上验过逻辑，无真实 FAT32 卷回归。
+- exFAT / HFS+ / Btrfs / XFS / SquashFS 未实现。
+
 ## [1.0.0] - 2026-11-15
 
 首个公开版本。全部内容沉淀自 2026 年美亚杯参赛过程。
