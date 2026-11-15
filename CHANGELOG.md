@@ -26,10 +26,20 @@
     item 数据偏移以 leaf 数据区起点 0x65 为基准（不是节点起点）
   - **目录遍历与读文件已完成**：root tree → ROOT_ITEM → FS_TREE/子卷 →
     DIR_ITEM/DIR_INDEX 去重 → INODE_ITEM
-  - `read_file()` 支持 INLINE / REG / PREALLOC、空洞补零、跨 chunk 拼接、zlib
-  - 未实现：lzo / zstd / lz4（抛 `NotImplementedError`）、
-    校验和验证（标准库无 crc32c）、RAID5/6 重建、
-    已删除文件恢复（Btrfs 删 inode 后 DIR_ITEM 直接消失，无墓碑）
+  - `read_file()` 支持 INLINE / REG / PREALLOC、空洞补零、跨 chunk 拼接
+  - **校验和全部实现**：crc32c（表驱动，独立于 zlib.crc32）/ xxhash64 /
+    sha256 / blake2b-256；元数据覆盖 `node[0x20:]`（依据 `disk-io.c`
+    `csum_tree_block`），数据走 csum 树（objectid = **-10**）逐扇区比对；
+    `verify_extent()` / `verify_node()`
+  - **多设备与副本重试**：`Btrfs(sub, devices={devid: sub})`；DUP / RAID1
+    校验失败或短读会自动换镜像，并写告警留痕（取证上必须可追溯）
+  - **RAID0/10/5/6 映射**对照 `volumes.c` 的 `map_blocks_*` 公式；
+    RAID56 的 P 逐行轮转；RAID5 单条带丢失用 XOR 重建
+  - **压缩**：zlib、LZO（按 `lzo1x_decompress_safe.c` 逐分支移植 + btrfs 封帧）、
+    LZ4（标准块解码）；zstd 走 ctypes 加载本机 libzstd，缺库时明确抛
+    `NotImplementedError`，**不静默降级**
+  - 未实现：加密 extent、已删除文件恢复（Btrfs 删 inode 后 DIR_ITEM 直接消失、
+    无墓碑）、extent / free-space / qgroup 语义、RAID6 的 Q 解码（不做 RS）
 
 - **`mkit/timeline.py`** —— 跨平台时间线
   - 6 种时间戳换算：Unix / FILETIME / HFS(1904) / APFS 纳秒 / FAT DOS（含 `tz_assumed` 标注）/ ext4（秒+纳秒）
