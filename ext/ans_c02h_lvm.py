@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """ans_c02h_lvm.py —— 解析 LVM2 PV（单 PV 线性 LV），暴露 LV 的 read。"""
 import re

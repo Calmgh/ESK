@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """ans_cm02s8.py -- 智能读取（extent 不全→按连续块读 + 按文件格式边界截断）+ 批量取证"""
 import io

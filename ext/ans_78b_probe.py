@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 # -*- coding: utf-8 -*-
 """ans_78b_probe.py —— Q78 第一步：正确解析 OST 头 + 探测内容分布

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """anslog.py —— 按官方模板记录每题取证过程，确保「照命令复现」得到同一答案。
 

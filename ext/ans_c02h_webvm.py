@@ -1,6 +1,6 @@
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 ﻿#!/usr/bin/env python3
 """ans_c02h_webvm.py —— Tronic.vmdk(base) + Tronic-000001.vmdk(snapshot) 链式只读，挂 ext4。"""

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """com03_raid2.py —— RAID5 映射校准：pd 公式 × 数据盘顺序 全组合暴力验证。"""
 import os

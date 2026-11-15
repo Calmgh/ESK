@@ -1,9 +1,9 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # 建议的 GitHub 仓库设置
 
 ## 仓库名
 
-`mkit_toolkit`　或　`mkit-forensics`
+`ESK`　或　`mkit-forensics`
 
 ## Description（一句话，160 字符内）
 
@@ -41,13 +41,13 @@ ctf-tools
 ## 首次 push 步骤
 
 ```bash
-cd mkit_toolkit
+cd ESK
 git init
 git add .
-git commit -m "init: mkit_toolkit v1.0.0 - 自搓电子数据取证工具包"
+git commit -m "init: ESK v1.0.0 - 自搓电子数据取证工具包"
 
 # 在 GitHub 建空仓库（不要勾 README/LICENSE/gitignore），然后：
-git remote add origin https://github.com/<你的用户名>/mkit_toolkit.git
+git remote add origin https://github.com/<你的用户名>/ESK.git
 git branch -M main
 git push -u origin main
 
@@ -58,9 +58,9 @@ git push origin v1.0.0
 
 然后在 GitHub 网页 → Releases → Draft a new release：
 - Tag: `v1.0.0`
-- Title: `mkit_toolkit v1.0.0 — 自己搓的取证工具包`
+- Title: `ESK v1.0.0 — 自己搓的取证工具包`
 - Description: 贴 `RELEASE.md` 的内容（去掉第一行标题）
-- 附件：上传 `mkit_toolkit.zip`
+- 附件：上传 `ESK.zip`
 
 ## 注意
 
@@ -75,4 +75,4 @@ git status --short | findstr /I "E01 e01 dd raw img bin vmdk vhdx hive"
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """q13_judge.py —— 裁决 Q13：Picture_9.png 到底与哪个 Downloads PNG 同源。
 做法：三者都解码为 numpy 数组，按 RGB 三通道逐像素比较，统计

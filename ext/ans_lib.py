@@ -1,6 +1,6 @@
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 # -*- coding: utf-8 -*-
 """ans_* 脚本共用工具：带路径的 NTFS 遍历、镜像工厂、路径解析。只读。"""

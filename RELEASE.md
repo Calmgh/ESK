@@ -1,4 +1,4 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+﻿<!-- ESK · Calmgh06 -->
 ### 缘起
 
 打了几年美亚杯。每年赛前最烦的是装美亚的工具——主办方的工具箱动辄几十个G，还一直报毒，要权限，申请授权，环境还经常对不上。
@@ -29,7 +29,7 @@
 - **VMDK / LVM2 / VHDX** —— GPT → LVM2 → ext4 三层剖开，含 `pe_start` 精确解析
 - **RAID5 缺块重建** —— mdadm left-symmetric，三重验证
 - **PNG 像素级同源判定** —— 识别 LSB 隐写关系的量化判据
-- **15 个必读的坑** —— 每条都是真实踩过并导致过错误结论的
+- **Q/A 排错** —— 每一条都是真实踩过并导致过错误结论的
 
 ### 快速开始
 
@@ -60,8 +60,8 @@ python examples/01_mount_ewf.py  disk.E01
 
 欢迎师傅们批判指正（取证小白瑟瑟发抖）
 
-**License**: MIT　｜　**dev by Calmgh06**
+**License**: MIT　｜　**Calmgh06**
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>

@@ -1,4 +1,4 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # APFS 技术笔记
 
 > 适用：`ext/apfs_map.py` + `ext/apfs_fs.py`
@@ -245,8 +245,8 @@ len(v.read_file(ino))        # ← 用这个
 
 ```python
 import sys
-sys.path.insert(0, "mkit_toolkit")
-sys.path.insert(0, "mkit_toolkit/ext")
+sys.path.insert(0, "ESK")
+sys.path.insert(0, "ESK/ext")
 
 from mkit.image import Image, SubImage
 import apfs_map as M
@@ -279,4 +279,4 @@ print(v.xattrs(ino))
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>

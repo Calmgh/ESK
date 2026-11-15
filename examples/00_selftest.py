@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """自检：确认环境与所有模块可用
 
@@ -71,7 +71,7 @@ def check(mod):
 
 def main():
     print("=" * 74)
-    print("mkit_toolkit 自检")
+    print("ESK 自检")
     print("Python %s" % sys.version.split()[0])
     print("=" * 74)
 

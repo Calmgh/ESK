@@ -1,6 +1,6 @@
 # ============================================================
-#  mkit_toolkit  ·  dev by Calmgh06
-#  电子数据取证工具包  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
+#  ESK  ·  Calmgh06
+#  Electronic Software Kit  |  EWF / NTFS / ext4 / APFS / VMDK / LVM2 / RAID5
 # ============================================================
 """ans_c02vm2.py —— VMDK→ext4 只读设备层（修正扇区内余数 bug）。
 关键修复：ingrain 必须包含 v % 512，不能先 sec = v//512 再算。

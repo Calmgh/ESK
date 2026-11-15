@@ -1,4 +1,4 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # 贡献指南
 
 这个项目是个人参赛沉淀，不追求完整，但欢迎补洞。
@@ -55,4 +55,4 @@ python examples/00_selftest.py     # 自检
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>

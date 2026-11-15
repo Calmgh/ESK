@@ -1,4 +1,4 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # VMDK / LVM2 / VHDX 技术笔记
 
 > 适用：`ext/ans_c02vm2.py`、`ext/webvm3_dev.py`、`ext/ans_c02h_lvm.py`、`ext/ans_c02_vhdx.py`
@@ -266,8 +266,8 @@ C:\Users\<user>\AppData\Local\Packages\
 
 ```python
 import sys
-sys.path.insert(0, "mkit_toolkit")
-sys.path.insert(0, "mkit_toolkit/ext")
+sys.path.insert(0, "ESK")
+sys.path.insert(0, "ESK/ext")
 
 import webvm3_dev as V
 from mkit.ext4 import Ext4
@@ -316,4 +316,4 @@ print([e.name for e in fs.listdir(fs.lookup("/"))])
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>

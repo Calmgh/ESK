@@ -1,5 +1,5 @@
-# mkit_toolkit  |  dev by Calmgh06
-# mkit_toolkit 依赖
+# ESK  |  Calmgh06
+# ESK 依赖
 # 核心（必需）：EWF 镜像加载
 libewf-python>=20231119
 

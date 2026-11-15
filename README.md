@@ -1,26 +1,27 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
-# mkit_toolkit
+﻿<!-- ESK · Calmgh06 -->
+# ESK
 
-**一套自己搓的电子数据取证工具包**　·　纯 Python　·　只读　·　零依赖起步
+**E**lectronic **S**oftware **K**it　·　纯 Python　·　只读　·　零依赖起步
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 [![Deps](https://img.shields.io/badge/required%20deps-1-lightgrey)]()
-[![Watermark](https://img.shields.io/badge/dev%20by-Calmgh06-orange)]()
+[![Author](https://img.shields.io/badge/ESK-Calmgh06-orange)]()
 
-> **dev by Calmgh06**
->
 > 版本 1.0.0　｜　Python 3.11+　｜　Windows / Linux / macOS
 
 ---
 
 ## 为什么有这个东西
 
-打了几年美亚杯。每年赛前最烦的是装美亚的工具——主办方的工具箱动辄几十个G，还一直报毒，要权限，申请授权，环境还经常对不上。
+打了几次取证。每年赛前最烦的是装美亚的工具——主办方的工具箱动辄几十个G，还一直报毒，要权限，申请授权，环境还经常对不上。
 
 等装完、跑通，时间过去了几个小时。
 
-今年就灵机一动 把往年的题目弄了个数据集 搓了一套框架出来
+今年换了个做法：自己搓一套。
+
+先用往年题目让ai来转化成数据集，把框架写出来；
+比赛当天再结合本地模型lora的qwen，按真实检材的现场补扩展做题。
 
 全程没有用美亚的任何工具，个人赛全部ak，团队赛做了285/291。
 
@@ -30,42 +31,43 @@
 
 ## 目录
 
-- [成绩（如实记录）](#成绩如实记录)
+- [成绩](#成绩)
 - [这个包是什么](#这个包是什么)
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [模块地图](#模块地图)
 - [能力与边界](#能力与边界)
-- [15 个必读的坑](#15-个必读的坑)
+- [Q/A](#qa)
 - [自建扩展说明](#自建扩展说明)
 - [示例脚本](#示例脚本)
 - [目录结构](#目录结构)
 - [已知限制](#已知限制)
-- [关于 AI 的参与](#关于-ai-的参与)
 - [许可与致谢](#许可与致谢)
 
 ---
 
-## 成绩（如实记录）
+## 成绩
 
-- 个人赛 **二等奖**（前 100，全部ak，不过有个别错题）
-- 团队赛 **三等奖**（285 / 291）
+| | 名次 | 备注 |
+|---|---|---|
+| **个人赛（上午）** | 二等奖（前 100） | 128 题全部AK，但一定有错题 |
+| **团队赛（下午）** | 三等奖 | 285 / 291，剩 6 题没做出来 |
 
-因为主办方限制在线模型，只能本地lora的qwen 跑，几个需要跨镜像长链推理的题顶不住
+**团队赛那几题为什么没做出来**：主办方限制了在线模型，全程只能用本地 LoRA 微调的 qwen 跑。上下文和推理能力都受限，几个需要跨多份镜像做长链推理的题就卡住了 框架应该是没问题的，师傅们可以用在线的模型试试看。
 
-整体效果我认为可以接受，但远谈不上成熟。**欢迎批评指正**，尤其是下面「已知限制」里列的那些没做完的部分。
+整体效果我认为可以接受，但谈不上成熟。欢迎批评指正。
 
 ---
 
 ## 这个包是什么
 
-`mkit` 是一套纯 Python 的电子数据取证基础库，把"读镜像 → 解分区 → 挂文件系统 → 提取结构化数据"这条链路封装成统一接口。**只读**，不修改证据。
+`mkit` 是一套纯 Python 的电子数据取证基础库，把"读镜像 → 解分区 → 挂文件系统 → 提取结构化数据"这条链路封装成统一接口。
 
 本包分两部分：
 
 | 部分 | 内容 | 规模 |
 |---|---|---|
-| **`mkit/`** | 核心库：镜像、分区、NTFS/ext4/APFS、注册表、隐写、钱包、各平台痕迹 | 28 个模块 / **25,982 行** |
+| **`mkit/`** | 核心库：镜像、分区、NTFS/ext4/APFS、注册表、隐写、钱包、各平台痕迹 | 28 个模块 / 25,982 行 |
 | **`ext/`** | 实战中补写的扩展：APFS 文件级读取、VMDK/LVM2/VHDX、RAID5 重建、像素级比对等 | 34 个模块 |
 
 **适合谁用**：做 CTF 取证题、做真实案件的初检、写自动化提取脚本、需要绕开商业工具限制的场景。
@@ -103,7 +105,7 @@ pip install -r requirements.txt
 
 ### 2.2 关于 libewf-python
 
-这是**最容易装失败**的一个。三个方案按顺序试：
+这是最容易装失败的一个。三个方案按顺序试：
 
 ```bash
 # 方案 1：预编译轮子（多数平台可用）
@@ -119,7 +121,7 @@ conda install -c conda-forge libewf-python
 pip install libewf-python --no-binary :all:
 ```
 
-装不上也能用——**裸镜像（`.dd` / `.raw` / `.img` / `.bin`）不需要 pyewf**。只有 `.E01` 才需要。
+装不上也能用——裸镜像（`.dd` / `.raw` / `.img` / `.bin`）不需要 pyewf。只有 `.E01` 才需要。
 
 ### 2.3 验证
 
@@ -137,7 +139,7 @@ python examples/00_selftest.py
 
 ```python
 import sys
-sys.path.insert(0, "path/to/mkit_toolkit")
+sys.path.insert(0, "path/to/ESK")
 
 from mkit.image import Image, SubImage
 import mkit.volume as volume
@@ -160,7 +162,7 @@ from mkit.ntfs import NTFS
 
 fs = NTFS(sub)
 
-# ⚠️ 不要用 fs.walk() —— 它会漏长文件名，见第六节坑 2
+# ⚠️ 不要用 fs.walk() —— 它会漏长文件名，见第 2 条
 idx = {e.num: e for e in fs.iter_mft() if e is not None}
 
 def path_of(num):
@@ -241,13 +243,13 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 
 ### 4.2 扩展 `ext/`
 
-见 [第七节](#七自建扩展说明)。
+见第七节。
 
 ---
 
 ## 能力与边界
 
-### 能做到
+**能做到**
 
 - EWF（含分卷、拆分）与裸镜像统一加载
 - MBR / GPT 分区表
@@ -259,38 +261,37 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 - 钱包助记词、密钥材料提取
 - iOS 备份解密、HEIC 解码
 
-### 做不到
+**做不到**
 
-- **APFS 快照 / 加密卷**（FileVault）—— 自建实现未覆盖
-- **完整的 APFS B-tree 遍历** —— 见第七节，只到"能按键值对提取记录"
-- **回收站/未分配簇的通用恢复** —— 各平台各有专门工具
-- **内存镜像** —— 本包不含，请用 Volatility 3
-- **写证据** —— 设计上只读
+- APFS 快照 / 加密卷（FileVault）—— 自建实现未覆盖
+- 完整的 APFS B-tree 遍历 —— 见第七节，只到"能按键值对提取记录"
+- 回收站/未分配簇的通用恢复 —— 各平台各有专门工具
+- 内存镜像 —— 本包不含，请用 Volatility 3
+- 写证据 —— 设计上只读
 
 ---
 
-## 15 个必读的坑
+## Q/A
 
 每一条都是真实踩过、并且导致过错误结论的。
 
-### 1. `volume.parse()` 对 GPT 失效
+### 1. `volume.parse()` 明明返回了，为什么分区信息是空的？
 
-它检查 `head[450:454] == b"EFI PART"`，而 GPT 签名实际在**偏移 512**。结果：所有 GPT 磁盘只返回保护性 MBR。
+它检查 `head[450:454] == b"EFI PART"`，而 GPT 签名实际在**偏移 512**。所以所有 GPT 磁盘都只返回保护性 MBR。
 
 ```python
 parts = volume._gpt(img, None) or volume.parse(img)   # ← 就这样
 ```
 
-### 2. `fs.walk()` / `fs.ls_entry()` 漏长文件名
+### 2. 目录明明是空的，为什么镜像里其实有几十个文件？
 
-**对每个文件条目只返回一个名字**，通常是 8.3 短名。你会得到"目录是空的"这种错误结论，而实际上里面有几十个长名文件。
+`fs.walk()` / `fs.ls_entry()` 对每个条目**只返回一个名字**，通常是 8.3 短名，长文件名全被漏掉。
 
-**必须**用 `fs.iter_mft()` + `parent_num` 自己重建路径（见 3.2）。
+必须用 `fs.iter_mft()` + `parent_num` 自己重建路径（见 3.2）。
 
-### 3. 注册表 hive 不能按路径读
+### 3. `fs.read_file("/Windows/System32/config/SOFTWARE")` 为什么报路径不存在？
 
-`fs.read_file("/Windows/System32/config/SOFTWARE")` 会报路径不存在。
-按 MFT 号取：
+注册表 hive 不能按路径读。按 MFT 号取：
 
 ```python
 for num, name in [(1485, "SYSTEM"), (1483, "SOFTWARE"), (1487, "SAM")]:
@@ -298,32 +299,32 @@ for num, name in [(1485, "SYSTEM"), (1483, "SOFTWARE"), (1487, "SAM")]:
     open(name + ".hive", "wb").write(fs.read_entry_data(ent))
 ```
 
-### 4. APFS 的 `NXSB` 在 0x20，不是 0
+### 4. 明明是 APFS 盘，为什么读前 8 字节没魔数、被误判成 FileVault？
 
-前 32 字节是 `obj_phys` 结构。只读前 8 字节会误判成"这不是 APFS / 这是 FileVault"。
+`NXSB` 在分区内偏移 **0x20**，前 32 字节是 `obj_phys` 结构。
 
 ```python
 sub.read(0x20, 4) == b"NXSB"      # ← 正确
 ```
 
-### 5. APFS 卷 OID 是虚拟号
+### 5. APFS 卷 OID 拿到了，为什么 `oid × block_size` 读出来是垃圾？
 
-不能 `oid × block_size` 直读，必须经容器 omap B-tree 翻译。见 `docs/APFS.md`。
+OID 是**虚拟对象号**，必须经容器 omap B-tree 翻译成物理地址。见 `docs/APFS.md`。
 
-### 6. `mkit.ext4.Ext4` 没有 `read_file`
+### 6. `fsx.read_file(ino)` 为什么报 AttributeError？
 
-只有 **`read_data(ino, size=None, offset=0)`**。
+`mkit.ext4.Ext4` 没有 `read_file`，只有 **`read_data(ino, size=None, offset=0)`**。
 
 ```python
 fsx.read_file(ino)      # AttributeError
 fsx.read_data(ino)      # ← 正确
 ```
 
-如果你的代码写成 `read_file` 又被 `except` 吞掉异常，会静默返回 `None`——**空结果和"确实没数据"看起来一模一样**，这是最危险的失败模式。
+**更危险的是**：如果代码写成 `read_file` 又被 `except` 吞掉异常，会**静默返回 `None`**——空结果和"确实没数据"看起来一模一样。这是最危险的失败模式。
 
-### 7. 别用 `fs.read_file()` 读大文件
+### 7. 只是读个描述符，脚本为什么挂死 / 爆内存？
 
-`VmdkDev` 之类的代码若用 `fs.read_file(desc_path)` 读描述符，遇到 11 GB 的 VMDK 会直接 `MemoryError`，而且表现为"脚本挂死、长时间无输出"。
+`VmdkDev` 之类的代码若用 `fs.read_file(desc_path)` 读描述符，遇到 11 GB 的 VMDK 会直接 `MemoryError`，表现为"脚本挂死、长时间无输出"。
 
 正确做法：取 runlist，只读需要的字节。
 
@@ -334,50 +335,53 @@ for a in fs._stream_attrs(ent, ATTR_DATA, None):
 hdr = fs.read_runs(runs, 0, 512)
 ```
 
-### 8. VMDK 读取必须保留扇区内余数
+### 8. ext4 挂上了，为什么 inode 的 `mode` 读出来是 0？
+
+VMDK 读取丢了扇区内余数：
 
 ```python
 ingrain = (ext_sec * SECTOR) % gsz          # ✗ 丢掉了 v % 512
 ingrain = (v - ext_start) % gsz             # ✓
 ```
 
-症状：所有非 512 字节对齐的读取都返回扇区边界数据；ext4 inode 的 `mode` 读出来是 0。
+症状：所有非 512 字节对齐的读取都返回扇区边界数据。
 
-### 9. LVM2 PV 标签位置
+### 9. LVM2 的 `"LVM2 001"` 魔数为什么找不到？
 
-`"LVM2 001"` 在**偏移 0x18**，不是 0x08。`offset_xl` 在 0x14，`pv_uuid` 在 0x20。见 `docs/VMDK-LVM2.md`。
+它在偏移 **0x18**，不是 0x08。`offset_xl` 在 0x14，`pv_uuid` 在 0x20。见 `docs/VMDK-LVM2.md`。
 
-### 10. GPT 条目在 LBA2（偏移 1024）
+### 10. 按 GPT 分区偏移读，为什么数据错位 128 字节？
 
-从偏移 512 读到的是 GPT **头**，不是条目。会错位 128 字节。
+偏移 512 读到的是 GPT **头**，条目在 **LBA2（偏移 1024）**。
 
-### 11. `fs.count_records()` 返回 tuple
+### 11. `format(fs.count_records(), ",")` 为什么抛 TypeError？
 
-不是 int。`format(nrec, ",")` 会抛 `TypeError`。
+它返回的是 **tuple**，不是 int。
 
-### 12. `fs.find()` 在大镜像上极慢
+### 12. `fs.find()` 跑了半小时还没完？
 
-931 GiB 扫一遍会跑到超时。已知 MFT 号时用 `fs.read_entry()`；未知时先建一次索引缓存。
+931 GiB 全扫会跑到超时。已知 MFT 号时用 `fs.read_entry()`；未知时先建一次索引缓存。
 
-### 13. ext4 挂载要显式过滤分区
+### 13. `for p in parts` 挂上 ext4 后目录是空的？
+
+循环结束后 `p` 停在最后一个分区（常是 swap）。按 `type_id` 显式过滤：
 
 ```python
-for p in parts:            # ✗ 循环结束后 p 停在最后分区（常是 swap）
+for p in parts:            # ✗
     fs = Ext4(...)
-```
 
-```python
 p = [x for x in parts if x["type_id"] == 0x83][0]     # ✓
 ```
 
-### 14. `vol.exe > file` 是 UTF-16LE
+### 14. `vol.exe > file` 读出来全是乱码？
 
-Volatility 3 重定向输出后，Python 必须以 `encoding='utf-16'` 读，否则全是乱码。
+Volatility 3 重定向输出是 **UTF-16LE**，Python 必须以 `encoding='utf-16'` 读。
+
 另：新版插件名 `hivelist` → **`registry.hivelist`**。
 
-### 15. 控制台编码
+### 15. 中文在 Windows 控制台显示成乱码？
 
-Windows 控制台默认 GBK，中文会乱。务必：
+控制台默认 GBK。务必：
 
 ```python
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -414,8 +418,6 @@ data = v.read_file(ino)
 ### 7.2 VMDK / LVM2 / VHDX
 
 **核心库现状**：无 vmware / lvm / vhdx 模块。
-
-**扩展**：
 
 | 模块 | 用途 |
 |---|---|
@@ -469,7 +471,7 @@ data = dev.read(0, 512)
 |---|---|
 | `00_selftest.py` | 环境自检 |
 | `01_mount_ewf.py` | 装载 EWF/原始镜像，识别 MBR/GPT，列出分区 |
-| `02_ntfs_walk.py` | NTFS 完整路径重建（绕开坑 2） |
+| `02_ntfs_walk.py` | NTFS 完整路径重建（绕开第 2 条） |
 | `03_apfs_read.py` | APFS 容器扫描、列卷、按路径读文件 |
 | `04_vmdk_lvm.py` | VMDK → GPT → LVM2 → ext4 全链路 |
 | `05_raid5.py` | mdadm RAID5 缺块 XOR 重建 |
@@ -487,12 +489,12 @@ python examples/05_raid5.py      disk0.img disk2.img rebuilt.img
 ## 目录结构
 
 ```
-mkit_toolkit/
+ESK/
 ├── README.md               本文件
 ├── requirements.txt
 ├── VERSION
 ├── mkit/                   核心库（28 模块 / 25,982 行）
-├── ext/                    自建扩展（33 模块）
+├── ext/                    自建扩展（34 模块）
 │   └── __init__.py
 ├── examples/               可运行示例（6 个）
 │   ├── 00_selftest.py
@@ -511,47 +513,18 @@ mkit_toolkit/
 
 ## 已知限制
 
-诚实地说清楚做到哪、没做到哪。
-
 | 项 | 状态 | 说明 |
 |---|---|---|
 | APFS 完整 B-tree 遍历 | **未完成** | TOC 的 `voff` 偏移约定未收敛；现用"按记录类型模式匹配"绕过，能读文件但不能完整遍历 |
 | APFS 快照 / FileVault | 不支持 | — |
-| LVM2 元数据解析 | 部分 | `pe_start` 前 2 MB 常读为全零，采用"单 segment、start_extent=0"假设，靠 ext4 魔数验证 |
+| LVM2 元数据解析 | 部分 | `pe_start` 前 2 MB 常读为全零，采用"单 segment、`start_extent=0`"假设，靠 ext4 魔数验证 |
 | RAID5 layout | 只实现 left-symmetric | 其他 layout（left-asymmetric / right-*）未覆盖 |
 | VHDX | 基础读取 | 未实现日志回放 |
 | 内存镜像 | 不含 | 请用 Volatility 3 |
 
 **用法建议**：把本包当作"文件系统层与磁盘容器层的工具"，内存与高层应用分析另找工具配合。
 
-**关于比赛成绩**：这套东西在 2026 年美亚杯拿到个人赛二等奖、团队赛三等奖，团队赛 285/291。
-成绩不能反推工具质量——题目有运气成分，检材形态也有偶然性。请看能力边界，别看出身。
-
----
-
-## 关于 AI 的参与
-
-框架是 AI 按需求写的，扩展是比赛期间 AI 出初版、人工调试。
-
-但所有答案判断、检材解释都由人工完成。
-
----
-
-下面展开说一点，因为不说清楚容易误导别人：
-
-- `mkit/` 的骨架是让 AI 按往年题目需求写的。28 个模块、约 2.6 万行，人工做的是提需求、验结果、改错。
-- `ext/` 是比赛期间现写的——APFS 文件级读取、VMDK/LVM2、RAID5 重建这几块，是遇到真实检材卡住了才补的。
-- 文档（README、docs/）的初稿也是 AI 写的，事实和数据由人工核对。
-- **AI 没参与的部分**：所有答案的最终判断、对检材内容的解释（哪些是观察、哪些是推断）、「这题到底答不答得出来」的决定。
-
-**为什么要把这些写出来**：
-
-AI 把「写一个 NTFS 解析器」从两周压到了两天，这个提速是真实的。
-但它同样会把错误写得很有信心——`read_file` 和 `read_data` 那个坑，AI 写的代码自洽、能跑、不报错，只是**静默返回空**。如果我没有拿一个已知格式的文件去验证，这个 bug 会一路带到最终答案里。
-
-所以这个包的定位是：**AI 加速写出来的工具，但每个结论都要人拿真实数据验一遍。**
-
-欢迎把它当起点改，不建议直接信。
+**关于比赛成绩**：这套东西在 2026 年美亚杯拿到个人赛二等奖、团队赛三等奖，团队赛 285/291。成绩不能反推工具质量——题目有运气成分，检材形态也有偶然性。
 
 ---
 
@@ -559,14 +532,10 @@ AI 把「写一个 NTFS 解析器」从两周压到了两天，这个提速是�
 
 本包为 **Calmgh06** 个人实战整理的产物，可自由使用与修改。
 
-如果发现 bug 或想补上 APFS B-tree 那部分，欢迎提。
+欢迎师傅们批判指正
+
+**ESK by Calmgh06**
 
 ---
 
-欢迎师傅们批判指正（取证小白瑟瑟发抖）
-
-**License**: MIT　｜　**dev by Calmgh06**
-
----
-
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · Calmgh06</sub>

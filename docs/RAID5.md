@@ -1,4 +1,4 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # RAID5 缺块重建笔记
 
 > 适用：`ext/com03_raid2.py`、`ext/com03_raidfs.py`
@@ -201,8 +201,8 @@ ext4 超级块里有 `s_unrecoverable` 之类标志；`fsck` 也能报。本次 
 
 ```python
 import sys
-sys.path.insert(0, "mkit_toolkit")
-sys.path.insert(0, "mkit_toolkit/ext")
+sys.path.insert(0, "ESK")
+sys.path.insert(0, "ESK/ext")
 
 # 方式一：用现成脚本
 #   python examples/05_raid5.py disk0.img disk2.img rebuilt.img
@@ -227,4 +227,4 @@ print(sb)
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>

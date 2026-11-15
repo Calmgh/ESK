@@ -1,4 +1,4 @@
-<!-- mkit_toolkit · dev by Calmgh06 -->
+<!-- ESK · Calmgh06 -->
 # Changelog
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
@@ -55,4 +55,4 @@
 
 ---
 
-<sub>mkit_toolkit · **dev by Calmgh06**</sub>
+<sub>ESK · **Calmgh06**</sub>
