@@ -83,22 +83,22 @@
 | Btrfs | ✅ | **[*]** | `btrfs`（超级块 / chunk 树合并 / 目录遍历 / 读文件 / zlib） |
 | ZFS | ✅ | `[ ]` | 计划（体量大，优先级低） |
 | XFS | ✅ | **[~]** | `xfs`（超级块/AG 头/短格式目录/extent 文件；b-tree 格式 inode 未支持） |
-| ReFS | ✅ | `[ ]` | 计划 |
+| ReFS | ✅ | **[*]** | `refs`（超级块 + 容器表 + 对象表 B+ 树） |
 | SquashFS v1–v4 | ✅ | **[~]** | `squashfs`（v4，gzip/xz；其他压缩算法抛 NotImplementedError） |
 | CramFS v2 | ✅ | **[*]** | `cramfs`（位域 inode、块指针表、zlib/未压缩/空洞/DIRECT_PTR） |
 | ROMFS | ✅ | **[*]** | `romfs`（inode 链表、校验和、硬链接/符号链接） |
 | MINIFS v3 | ✅ | `[ ]` | 计划 |
-| F2FS | ✅ | `[ ]` | 计划（Android） |
+| F2FS | ✅ | **[*]** | `f2fs`（超级块/checkpoint/NAT/SIT/inode/目录；加密只识别） |
 | EROFS | ✅ | `[ ]` | 计划（Android） |
-| QNX4 / QNX6 | ✅ | `[ ]` | 计划（车机/IoT） |
+| QNX4 / QNX6 | ✅ | **[*]** | `retrofs`（QNX4 64 B inode / QNX6 大端 @0x2000） |
 | UBIFS v4/v5 | ✅ | `[ ]` | 计划 |
-| JFFS2 | ✅ | `[ ]` | 计划 |
-| YAFFS1 / YAFFS2 | ✅ | `[ ]` | 计划 |
-| Minix FS V1/V2/V3 | ✅ | `[ ]` | 计划 |
-| JFS | ✅ | `[ ]` | 计划 |
-| ReiserFS 3.5/3.6 | ✅ | `[ ]` | 计划 |
-| Amiga OFS/FFS | ✅ | `[ ]` | 计划 |
-| BeFS | ✅ | `[ ]` | 计划 |
+| JFFS2 | ✅ | **[*]** | `flashfs`（日志式多版本重建 + unlink 取证；RTIME/RUBIN/LZO 未实现） |
+| YAFFS1 / YAFFS2 | ✅ | **[*]** | `flashfs`（几何自动判定 + tags 解析；ECC 不校验） |
+| Minix FS V1/V2/V3 | ✅ | **[*]** | `classicfs`（三级间接 + 16/32/64 B 目录项） |
+| JFS | ✅ | **[*]** | `classicfs`（imap/dtree/xtree；压缩卷抛 NotImplementedError） |
+| ReiserFS 3.5/3.6 | ✅ | **[*]** | `classicfs`（S+ 树整树遍历 + 双 key 编码） |
+| Amiga OFS/FFS | ✅ | **[*]** | `retrofs`（根块/哈希表/OFS-FFS 两种数据块） |
+| BeFS | ✅ | **[*]** | `retrofs`（超级块 @512 + inode + dirent） |
 | GFS2 | ✅ | `[ ]` | 计划 |
 | OCFS2 | ✅ | `[ ]` | 计划 |
 | NILFS2 | ✅ | `[ ]` | 计划 |

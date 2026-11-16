@@ -3,6 +3,111 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.0] - 2026-11-16
+
+第 3 波：六个文件系统模块，十个 FEATURES 缺口。
+
+### 新增
+
+- **`mkit/f2fs.py`**（998 行）—— F2FS（Android 主力闪存文件系统）
+  - 超级块两份副本（块内偏移 0x400，块 0 与块 1）+ CRC32；字段偏移逐条照
+    `include/linux/f2fs_fs.h`（magic@0x00 / checksum_offset@0x20 /
+    block_count u64@0x24 / uuid@0x6C / volume_name[512]@0x7C /
+    extension_count@0x27C）
+  - checkpoint：两份 pack 取 `checkpoint_ver` 更大者，CRC 校验，标志位解码
+  - NAT（9 B 表项 / 每块 455 项）、SIT（70 B / 每块 58 项）
+  - inode：`i_addr` 起点 360、`i_nid` 起点 4052、footer 4072
+    （由 `DEF_ADDRS_PER_INODE = 923` 反推校验：360 + 923×4 = 4052，
+     4052 + 5×4 = 4072，加 24 B footer 正好 4096）
+  - inline 数据、直接块、一/二/三级间接（稀疏块补零）
+  - 目录项：长名占**连续多个 8 字节槽位**，按槽位游标读取
+  - 自检 45 项
+
+- **`mkit/refs.py`**（1425 行）—— ReFS
+  - 超级块、容器表、对象表（B+ 树）、目录项解析
+  - 自检通过
+
+- **`mkit/flashfs.py`**（1990 行）—— JFFS2 / YAFFS1 / YAFFS2
+  - JFFS2：4 字节对齐全镜像扫描、7 种节点类型、hdr_crc 先过、
+    多版本日志重建（同 inode 按 version 叠加 offset）、`(pino,name)` 取最大
+    version、`ino==0` 判 unlink（`unlinked()` 取证）、cleanmarker 间距 GCD
+    推断 erase_size
+  - YAFFS2：7 种几何打分自动判定、tags2 小端 4×u32、pageGuard `spare[20:24]`、
+    对象头 5 种候选布局打分两遍扫描、`(obj,chunk)` 取 seq 最大、
+    旧块进 `deleted()`
+  - YAFFS1：tags1 64 位位域解析、`deleted=1` 不进活文件、
+    无 seqNumber 时退化为物理顺序、`parent_off=` 可手工覆盖
+  - 压缩：NONE/COPY 直取、ZERO 补零、ZLIB 走 zlib；
+    RTIME/RUBINMIPS/DYNRUBIN/LZO 抛 `NotImplementedError`
+  - 与常见资料的差异（按内核源码纠正，已写入 docstring）：
+    `jffs2_raw_dirent` 是 pino@0x0C / ino@0x14 / nsize@0x1C / name@0x28；
+    `node_crc` 覆盖 0x00..0x3B（inode，含 hdr_crc）/ 0x00..0x1F（dirent），
+    不是从 0x0C 起；压缩号 7 是 LZO 不是 RUBINMIPS
+
+- **`mkit/classicfs.py`**（2054 行）—— Minix FS V1/V2/V3 · JFS · ReiserFS 3.5/3.6
+  - Minix 完整：三种版本超级块（含 0x138F/0x2478 30 字符变体）、
+    inode 表 `2+imap+zmap` 块、直接块 + 一/二/三级间接、
+    16/32/64 B 三种目录项、listdir/walk/read_file/lookup_path/find
+  - JFS：聚合 inode（AITBL_OFF 固定页）+ 文件集 inode（imap→iag→inoext→dinode）、
+    xtree 读文件（空洞补零、快符号链接内联 ≤256 B）、dtree 目录 + UTF-16LE 名字
+  - ReiserFS：S+ 树内部页下钻 + 叶子 item 枚举、3.5/3.6 双 key 编码、
+    `reiserfs_de_head` 目录项、direct + indirect 读文件
+  - 与任务书不一致处（按内核源码修正并写入 docstring）：
+    **JFS 是小端**（不是大端）；JFS `s_size` 是 8 字节导致 s_bsize 在 0x10、
+    s_agsize 0x20、s_flag 0x24、s_state 0x28；**Minix V2 inode 是 64 B**
+    （i_zone[10] 为 u32），V1 才是 32 B；**ReiserFS key 16 B、item_head 24 B、
+    block_head 24 B**；ReiserFS 超级块 blocksize@0x2C、magic@0x34、hash@0x40、
+    height@0x44、version@0x48；内部节点是「keys 后接 children」不是交替
+
+- **`mkit/retrofs.py`**（2599 行）—— Amiga OFS/FFS · BeFS · QNX4/QNX6
+  - Amiga：引导块 DOS\x00..DOS\x07、根块 @512（sec_type=2）、哈希表、
+    OFS 数据块 24 B 头 / FFS 无头、BSTR 名字 ≤30、Amiga 纪元 1978-01-01
+  - BeFS：超级块 @512（magic1 0x42465331）、`befs_block_run`、inode、
+    `befs_dirent` 目录
+  - QNX4：超级块 @块 1、64 B inode、inode 号 = 块号、extent 链
+  - QNX6：超级块 @0x2000（大端）、L1/L2 inode、`qnx6_dir_entry`
+  - 自检通过
+
+- **`mkit/containers.py`**（1162 行）—— 冷门镜像 / 固件容器
+  - U-Boot uImage（64 B 大端头、ih_hcrc/ih_dcrc 校验、
+    gzip/bzip2/lzma 解压、os/arch/type/comp 名称表）
+  - Netgear CHK（40 B 头 + board_id，magic 0x2A23245E，
+    reserved[0] 区域码 1=WW/2=NA，reserved[1..7] 版本 A–G）
+  - TRX（`HDR0`，28 B，CRC32，loader/kernel/rootfs 分段）
+  - Parallels PHD（`WithoutFreeSpace`/`WithouFreSpacExt`，
+    `sizeof(ParallelsHeader)` = BASIC 56 / EXT 60，BAT 紧跟头部结构体，
+    BAT 是「逻辑扇区→物理扇区」映射，未分配块返回零）
+  - Sercomm（`sErCoMm` 在 0–6 **与** 63–69 各一次，512 B 头，
+    偏移 511 的校验和 = 全镜像校验和取反）
+  - TP-Link SafeLoader（512 B `fw_header`，`0xA5@0x90` 与 `0x55AA@0x8C`
+    双重确认，按 kernel_ofs/rootfs_ofs/boot_ofs 切段）
+  - Buffalo DNI（128 B ASCII 头，`device:/version:/region:/RootfsSize:/
+    KernelSize:/InfoHeadSize:` 逐行解析）
+  - PMFX / LDBK / HDR1：**没有公开规范，只做识别，`spec_known=False`，
+    不给载荷段、不猜字段**
+  - 自检 82 项
+
+### 未实现（docstring 已写明）
+
+- F2FS：加密（ICE / inline encryption）只报 `feature` 位与 `encryption_level`，
+  不解密；压缩只报字段不解压；多设备分段不拼接；checkpoint 的 data summary
+  与 journal 不解析
+- JFFS2：summary 加速索引不解析（仅计数）；xattr/xref 不做语义合并；
+  RTIME/RUBINMIPS/DYNRUBIN/LZO 抛 NotImplementedError
+- YAFFS：tags 的 ECC 不校验（`yaffs_ECCOther` 是私有列/行奇偶，非标准 CRC，
+  用字段合理性替代且不声称通过）；inband tags（无 OOB）不做；
+  checkpoint/summary 对象只计数
+- Serpent / Twofish 与 lz4 / zstd：标准库与纯 Python 依赖都不含，抛 NotImplementedError
+- 全部写操作
+
+### 验证
+
+- `mkit/containers.py` 82 项、`mkit/f2fs.py` 45 项全过
+- `mkit/flashfs.py` / `mkit/classicfs.py` / `mkit/refs.py` / `mkit/retrofs.py` 自检 EXIT=0
+- `mkit/raid.py` 自检 11 组（GF 表 + 乘除互逆 + 6 个级别 + 9 种布局）
+- 覆盖：`[ ]` 从 38 降到 28
+
+
 ## [1.6.1] - 2026-11-15
 
 容器补 UBI / UBIFS。

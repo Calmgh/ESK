@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.6.1"
+__version__ = "1.7.0"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -23,6 +23,12 @@ __all__ = [
     "online", "regf", "revkit", "revkit_help",
     "archive", "bincue", "raid", "raidmeta",
     "ubi",
+    "classicfs",
+    "containers",
+    "f2fs",
+    "flashfs",
+    "refs",
+    "retrofs",
 ]
 
 # 模块用途速查
@@ -80,6 +86,12 @@ MODULE_DOC = {
     "raid": "RAID 重组：0/1/4/5(left,right)/6/10，GF(2^8)，RAID6 缺两盘 P+Q 联立重建",
     "raidmeta": "RAID 元数据：Intel IMSM/VROC MPB 与 SNIA DDF",
     "ubi": "UBI 卷层（EC/VID 头、PEB 扫描、卷重组）+ UBIFS（顺序 LEB 扫描读文件）",
+    "classicfs": "Minix FS V1/V2/V3 · JFS · ReiserFS 3.5/3.6（只读，含 S+ 树/xtree/dtree）",
+    "containers": "冷门镜像/固件容器：uImage / CHK / TRX / PHD / Sercomm / SafeLoader / Buffalo",
+    "f2fs": "F2FS（Android 主力闪存文件系统：超级块/checkpoint/NAT/SIT/inode/目录）",
+    "flashfs": "JFFS2 · YAFFS1 · YAFFS2（裸 NAND 闪存文件系统，日志式多版本重建）",
+    "refs": "ReFS（Windows 弹性文件系统：超级块/容器表/对象表/目录）",
+    "retrofs": "Amiga OFS/FFS · BeFS · QNX4/QNX6（老式与车机/IoT 文件系统）",
 }
 
 
