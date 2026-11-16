@@ -3,6 +3,62 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.3] - 2026-11-16
+
+### 新增
+
+- **`mkit/bcachefs.py`** —— bcachefs 只读解析
+  - 超级块位于偏移 0x1000（`BCH_SB_SECTOR = 8`，512 B 扇区）
+  - 逐字段解析 `struct bch_sb`：csum(16) / version(16) / version_min(18) /
+    pad(20) / **magic uuid(24)** / uuid(40) / user_uuid(56) / label[32](72) /
+    offset(104) / seq(112) / block_size(120) / dev_idx(122) /
+    nr_devices(123) / u64s(124) / time_base_lo(128) / time_base_hi(136) /
+    time_precision(140) / flags[7](144) / write_time(200) /
+    features[2](208) / compat[2](224) / layout(240, 512 B)，
+    字段链从 **752** 起
+  - 版本按 `BCH_VERSION = (major << 10) | minor` 反解；块大小是 512 B 扇区数，
+    故 `block_size = 值 << 9`
+  - 字段链按 `u32 u64s + u32 type` 步进，`u64s == 0` 结束，越界即抛；
+    解析 16 种字段类型名
+  - 成员：`members_v2` 优先、按 `member_bytes` 精确切分；`members_v1` 按 56 B，
+    整除时回落 296 B；`struct bch_member` 296 B 逐字段；桶字节 =
+    `bucket_size << 9`
+  - journal：桶号取自 `journal`(type 0) 或 `journal_v2`(type 9) 的区间展开；
+    jset magic = `le64(sb.uuid) ^ 0x245235c1a3625032`（也接受大端变体）；
+    桶内按 `56 + u64s*8` 步进，magic 不符即停桶并记 warning
+  - 自检 78 项
+
+### 未实现（docstring 已写明，且 `info()` 里 `btree_available=False`）
+
+- **btree 完全未实现**：`listdir()` / `read_file()` / `walk()` 一律抛
+  `NotImplementedError`，因此**本模块不能列目录、不能读文件**，只到超级块、
+  字段链、成员与 journal 头这一层。不返回空列表假装成功
+- **jset 的 csum 未校验**（crc32c 与 chacha 变体都没实现），只如实上报
+  `csum_type` 与原始值
+- **加密 jset / entry 层解析 / journal 重放与选取最近 seq** 均未做
+
+### 与题述格式的差异（按 2026 版头文件实现，已写入 docstring）
+
+1. `BCHFS_MAGIC` 现在是 **16 字节 UUID**
+   `c68573f6-66ce-90a9-d96a-60cf803df7ef`，不是 u64 `0xca451a4bc78044dd`；
+   后者只保留为 probe 兼容分支，命中时明确抛「旧版定长布局未实现」
+2. `struct bch_sb` 的真实字段顺序与旧布局不同（magic 是 uuid、seq 在 112、
+   block_size 在 120），字段链起点是 752 而不是旧值
+3. 没有 `block_size_bits` 字段；块大小由 512 B 扇区数推出
+
+### 未坐实的推断
+
+- `block_size` 的单位是 512 B 扇区（`super.c` / `super-io.c` 在 jsdelivr 上 404、
+  GitHub raw 不通，没能看 `bch2_sb_validate` 坐实）
+- journal 桶号是**绝对**桶索引、`offset = bucket * bucket_bytes`
+- `members_v1` 项宽 56 B 时，第 48 字节之后的字段语义未解码
+
+### 验证
+
+- `bcachefs` 自检 78 项通过（连跑两次均 0）
+- 只在合成镜像上验证，没有真实 bcachefs 镜像可比对
+
+
 ## [1.7.2] - 2026-11-16
 
 加密与解读两类共六个模块。

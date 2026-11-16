@@ -102,7 +102,7 @@
 | GFS2 | ✅ | **[*]** | `gfs2`（超级块/资源组/dinode/stuffed 与 EXHASH 目录/元树；rindex 与 readlink 未做） |
 | OCFS2 | ✅ | `[ ]` | 计划 |
 | NILFS2 | ✅ | **[*]** | `nilfs2`（段摘要/超级根/checkpoint/B-tree；SUFILE 语义与 ss_sumsum 强校验未做，无真实镜像验证） |
-| bcachefs | ✅ | `[ ]` | 计划 |
+| bcachefs | ✅ | **[*]** | `bcachefs`（超级块/字段链/成员/journal；**btree 未实现，不能列目录或读文件**，jset csum 未校验） |
 | **exFAT（ESK 独有前置）** | ✅ | **[*]** | 见上 |
 
 > **小结**：文件系统 33 种里，ESK 已覆盖 13 种（NTFS / ext / FAT / exFAT / APFS / ISO9660 / UDF / HFS+ / XFS / SquashFS / CramFS / ROMFS / Btrfs），
