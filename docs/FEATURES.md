@@ -81,7 +81,7 @@
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
 | UDF | ✅ | **[*]** | `udf`（同上） |
 | Btrfs | ✅ | **[*]** | `btrfs`（超级块 / chunk 树合并 / 目录遍历 / 读文件 / zlib） |
-| ZFS | ✅ | `[ ]` | 计划（体量大，优先级低） |
+| ZFS | ✅ | **[*]** | `zfs`（uberblock/blkptr/fletcher4/ZAP/目录；**SA 未解，文件精确长度与 mtime 取不到**；无真实镜像验证） |
 | XFS | ✅ | **[~]** | `xfs`（超级块/AG 头/短格式目录/extent 文件；b-tree 格式 inode 未支持） |
 | ReFS | ✅ | **[*]** | `refs`（超级块 + 容器表 + 对象表 B+ 树） |
 | SquashFS v1–v4 | ✅ | **[~]** | `squashfs`（v4，gzip/xz；其他压缩算法抛 NotImplementedError） |
@@ -89,7 +89,7 @@
 | ROMFS | ✅ | **[*]** | `romfs`（inode 链表、校验和、硬链接/符号链接） |
 | MINIFS v3 | ✅ | `[ ]` | 计划 |
 | F2FS | ✅ | **[*]** | `f2fs`（超级块/checkpoint/NAT/SIT/inode/目录；加密只识别） |
-| EROFS | ✅ | `[ ]` | 计划（Android） |
+| EROFS | ✅ | **[*]** | `erofs`（FLAT_PLAIN/INLINE/COMPRESSED + 自实现 LZ4；CHUNK_BASED 与 LZMA/ZSTD 抛 NotImplementedError） |
 | QNX4 / QNX6 | ✅ | **[*]** | `retrofs`（QNX4 64 B inode / QNX6 大端 @0x2000） |
 | UBIFS v4/v5 | ✅ | **[*]** | `ubi`（顺序 LEB 扫描读文件；**未做 IDX 索引遍历**，GC 残留旧节点按 sqnum 取舍） |
 | JFFS2 | ✅ | **[*]** | `flashfs`（日志式多版本重建 + unlink 取证；RTIME/RUBIN/LZO 未实现） |
@@ -99,7 +99,7 @@
 | ReiserFS 3.5/3.6 | ✅ | **[*]** | `classicfs`（S+ 树整树遍历 + 双 key 编码） |
 | Amiga OFS/FFS | ✅ | **[*]** | `retrofs`（根块/哈希表/OFS-FFS 两种数据块） |
 | BeFS | ✅ | **[*]** | `retrofs`（超级块 @512 + inode + dirent） |
-| GFS2 | ✅ | `[ ]` | 计划 |
+| GFS2 | ✅ | **[*]** | `gfs2`（超级块/资源组/dinode/stuffed 与 EXHASH 目录/元树；rindex 与 readlink 未做） |
 | OCFS2 | ✅ | `[ ]` | 计划 |
 | NILFS2 | ✅ | `[ ]` | 计划 |
 | bcachefs | ✅ | `[ ]` | 计划 |

@@ -3,6 +3,65 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.1] - 2026-11-16
+
+三个文件系统模块。
+
+### 新增
+
+- **`mkit/erofs.py`** —— EROFS（Android 只读分区）
+  - 超级块 @1024、magic 0xE0F5E1E2；compact(32 B) 与 extended(64 B) inode
+  - 布局：FLAT_PLAIN / FLAT_INLINE（含 i_size 超过块大小时的分段内联）/
+    COMPRESSED_COMPACT / COMPRESSED_FULL
+  - **自实现 LZ4 block 解码**（token 双 4 位 + 255 扩展 + 小端 16 位偏移 +
+    末尾纯字面量序列 + 0padding 尾部零填充），压缩簇按 i_size 截断
+  - 目录跨多块；中文文件名
+  - 自检 51 项
+  - 未实现并明确抛 `NotImplementedError`：CHUNK_BASED 布局、LZMA/DEFLATE/ZSTD、
+    HEAD2、partial lcluster（clusterofs≠0）、新式 extent 索引、fragment/packed inode
+  - 与常见描述不同（按 `erofs_fs.h` 核对后修正）：超级块 0x18 是 `epoch`(u64)，
+    `build_time` 在 0x6C(u32)；0x24 是 `blocks_lo`，48BIT 时高位占用 0x0E；
+    目录项名字按内核 strnlen 语义**不跨块**
+  - LZ4 的多逻辑簇跨度与 BIG_PCLUSTER 只有代码路径，**没有真实 mkfs.erofs
+    产物验证过**，docstring 如实标注
+
+- **`mkit/zfs.py`** —— ZFS
+  - uberblock：4 个 vdev label × 128 个环全扫，magic 校验后取最大 `ub_txg`
+  - blkptr（含 embedded / hole / 三 DVA）、dnode（含 `dn_extra_slots`、
+    bonus 越槽读取、多级 indirection、跨块切分、空洞补零）
+  - 校验：`fletcher4`（自实现，32 位累加为主，另留 64 位兼容变体）与 sha256
+  - 解压：none / gzip（zlib→raw deflate→gzip 头依次试）/ zle（自实现）/
+    lzjb（自实现）；lz4 / zstd 抛 `NotImplementedError`
+  - **ZAP 与目录做通**：microzap（0x40 起 64 B 条目）与 fat-ZAP
+    （ZBT_HEADER / ZBT_LEAF，24 B chunk、21 B 数组链、embedded ptrtbl 与
+    ptrtbl 块两条路径）；master node 的 "ROOT" → 根目录
+  - 自检 12 项
+  - **未实现（最大缺口）**：SA / 旧 znode bonus 未解析，因此**文件精确长度与
+    mtime 取不到**；`read_file()` 返回按块对齐长度，调用方可用 `size=` 裁剪
+  - 另外未做：label nvlist（无 pool 名 / pool guid / vdev 树）、多 vdev 与
+    raidz 重组、gang block、ZIL 回放、快照遍历、加密数据集、dedup
+  - 诚实标注：lzjb 按「2 位长度 / 14 位偏移」公式实现，只做过自造往返验证，
+    没有真实 OpenZFS 镜像可比对；全部测试基于合成镜像
+
+- **`mkit/gfs2.py`** —— GFS2
+  - 超级块（272 B）+ 末尾副本回退；字段偏移按 `gfs2_ondisk.h` 查证
+  - 资源组：头字段与位图，另有按块号反推（`rg_of_block`）
+  - dinode（232 B）字段逐条查证
+  - 目录：stuffed 与 EXHASH（depth=8 桶→叶子）两种都通，中文名
+  - 读文件：内联 extent 通；height>0 元树为推断实现（仅合成镜像验证）
+  - 自检 13 组
+  - 未实现：rindex 链遍历（改用扫描 + `rg_skip`）、扩展属性、日志重放、
+    readlink（`CAPS['readlink']=False`，调用即抛 `NotImplementedError`）
+  - 诚实标注：`rg_fsck_error_flags` 在内核头文件里不存在（gfs1 遗留），
+    改取 `rg_reserved[0:4]` 并在返回里标 `_source` 不可信；超级块备份偏移、
+    depth>1 的 IN 下降、extent 槽布局均为**推断**，docstring 与 `CAPS` 注释已写明
+
+### 验证
+
+- `erofs` 自检 51 项、`zfs` 自检 12 项、`gfs2` 自检 13 组，各自连跑两次均为 0
+- 三个模块都只在合成镜像上验证过，没有对应文件系统的真实镜像可比对，已逐个标注
+
+
 ## [1.7.0] - 2026-11-16
 
 六个文件系统模块，十个 FEATURES 缺口。

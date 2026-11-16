@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -29,6 +29,9 @@ __all__ = [
     "flashfs",
     "refs",
     "retrofs",
+    "erofs",
+    "gfs2",
+    "zfs",
 ]
 
 # 模块用途速查
@@ -92,6 +95,9 @@ MODULE_DOC = {
     "flashfs": "JFFS2 · YAFFS1 · YAFFS2（裸 NAND 闪存文件系统，日志式多版本重建）",
     "refs": "ReFS（Windows 弹性文件系统：超级块/容器表/对象表/目录）",
     "retrofs": "Amiga OFS/FFS · BeFS · QNX4/QNX6（老式与车机/IoT 文件系统）",
+    "erofs": "EROFS（Android 只读分区：FLAT_PLAIN/INLINE/COMPRESSED + 自实现 LZ4）",
+    "gfs2": "GFS2（集群文件系统：超级块/资源组/dinode/stuffed 与 EXHASH 目录/元树）",
+    "zfs": "ZFS（uberblock/blkptr/fletcher4/ZAP/目录；SA 未解，文件精确长度与 mtime 取不到）",
 }
 
 
