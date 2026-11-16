@@ -3,6 +3,106 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.2] - 2026-11-16
+
+加密与解读两类共六个模块。
+
+### 新增
+
+- **`mkit/veracrypt.py`** —— VeraCrypt / TrueCrypt 卷头解析与口令解锁
+  - 头区 64 KiB：前 64 B 未加密 salt，其后 448 B 整体 AES-XTS 加密
+  - 解密后字段为**大端**：magic@0x00 / version@0x04 / 密钥区 CRC@0x08 /
+    隐藏卷大小@0x1C / 卷大小@0x24 / 加密区起止@0x2C@0x34 / 标志@0x3C /
+    扇区大小@0x40 / **头 CRC@0xBC**（覆盖解密区 0x00..0xBB）/
+    **主密钥区@0xC0**（即卷内 0x100）
+  - PBKDF2 派生 192 B，AES-256 取前 64 B 作 XTS 密钥（32 主 + 32 tweak）
+  - PRF：sha512 / sha256 / ripemd160 / blake2s；迭代表含 TrueCrypt
+    1000/2000 与 VeraCrypt 500000、ripemd160 **655331**、系统卷 200000/327661
+  - PIM：非系统 `15000 + PIM×1000`，系统 `PIM×2048`
+  - 主头 / 备份头 / 隐藏头 / 隐藏备份头四个位置都扫；主头坏时从备份头解
+  - 自检 62 项（含与 `mkit.bitlocker` 的 XTS 互校）
+  - 未实现并明确抛 `NotImplementedError`：whirlpool / stribog512（本机
+    hashlib 无实现）、Serpent / Twofish / 全部级联、Argon2id
+  - **加密算法不存放在卷头里**，只能按 AES 试；别家算法需调用方显式指定
+  - 未在真实卷上验证（无样本），`verified_on_real_volume` 恒为 False
+
+- **`mkit/filevault2.py`** —— FileVault 2 / CoreStorage
+  - 物理卷头（"CS"@0x58，弱 CRC-32C 覆盖 8..511）、元数据块头、
+    0x0011 卷组 / 0x001a 逻辑卷 / 0x0019 加密上下文
+  - **AES-KW 按 RFC 3394 自实现**，用 §4.1 / §4.3 / §4.6 三组官方向量验证
+    （解出的 A 寄存器断言为 0xA6 全 8 字节）
+  - 密钥链：口令 → PBKDF2-HMAC-SHA256 → AES-KW 解 KEK → AES-KW 解 VMK
+  - 数据 AES-XTS：tweak 密钥 = SHA256(VMK‖familyUUID)[:16]
+  - CRC-32C 弱校验、扇区往返与跨界读
+  - 自检 8 节
+  - 与题述不同（按 libfvde 文档）：**卷组描述符步长是 48 B 不是 24 B**；
+    0x0011 的块内偏移基准文档没写，两个基准都试并记录 `plist_base`
+  - **启发式部分**：加密元数据区里 0x0019 用 tweak=0 还是 tweak=块号无定论，
+    靠块头 CRC + 块类型撞；多物理卷只解析不重组；系统卷必须 `wipekey=` 传入
+
+- **`mkit/vss.py`** —— Windows VSS 卷影副本
+  - 三种输入形态自动识别：卷镜像（卷头@0x1E00）/ 存储块文件 / catalog
+  - 目录项 128 B（type 为 u64：1 未用 / 2 快照 / 3 存储挂接），快照时间与
+    ID、卷大小、中文卷名
+  - 块描述符 32 B、range 条目 24 B、bitmap（1 bit = 1 块 16384）；
+    full / overlay / 零 三种读法实测
+  - 自检 40 项
+  - 未实现：跨存储 forwarder 与 `previous_store()` 抛 `NotImplementedError`；
+    多存储链、previous bitmap 仲裁、NTFS 层、写入
+  - 与题述不同（按 libvshadow 文档）：标识符是 **16 字节 GUID**
+    `{3808876b-...}`（题述的 8 字节是它的前半）；所谓「文件头」实为
+    **卷偏移 0x1E00 的卷头**；catalog 的 `type` 是 **u64@0**
+
+- **`mkit/nilfs2.py`** —— NILFS2
+  - 超级块主副本 @1024 + 备份 @`((devsize>>12)-1)<<12`；`s_sum` 按
+    `~zlib.crc32(data, ~seed)` 实现，主块坏回退备份
+  - 段摘要 magic **0x1eaffa11**；`s_last_pseg`→`ss_next` 串链并补扫段首；
+    超级根是带 `SS_SR` 的摘要之后第一块，含 DAT / CPFILE / SUFILE 三个内联 inode
+  - CPFILE 用**直接块寻址**（cpfile.c 的 tcno 算法，不是 palloc），从中取
+    `cp_ifile_inode`；ifile 的 palloc 按 `epb/epg/gpd/bpg/bpd` 公式定位
+  - inode 128 B；`i_bmap` 支持 direct 与 B-tree 双形态；虚块号先查 DAT，
+    再回退段摘要日志映射
+  - `listdir` / `walk` / `read_file` / `lookup_path` / `find`
+  - 自检 45 项
+  - 未做：SUFILE 段用途表语义、`ss_sumsum` 强制校验（提供 `verify_segsum()`
+    但默认关闭）、写操作
+  - 未在真实镜像上验证（无样本）；`ss_cycle`、`cp_pad`、`cp_dat_entry`、
+    `i_atime` 在内核头文件中并不存在，已按真实字段实现
+
+- **`mkit/casebook.py`** —— 取证案件管理 + 哈希链审计 + 文件索引落盘
+  - `Case`：case.json + index.sqlite（artifacts 表按 path 与 sha256 建索引）、
+    证据登记与整文件 sha256/md5、`Case.open` 只读打开
+  - `AuditLog`：每条 `hash = sha256(规范化内容 + prev)`，首条 prev 为 64 个 0；
+    `verify()` 能精确报出**单条篡改、删行、插行、改 prev、坏 JSON** 的断链位置
+  - `ingest_tree`（适配 walk 的两种签名）、`export_csv`（带 BOM）/`export_json`、
+    `manifest` 与 `verify_evidence`（改证据后报 sha256/md5/size 不一致）
+  - 自检 10 项；额外用真实 ROMFS 镜像跑通 ingest_tree 端到端
+  - 限制：真实镜像只验过 ROMFS；截断哈希（默认前 4 MiB）标 `hash_partial`
+    且 `by_hash()` 不过滤；**审计链无签名/外部锚**，整链连同 hash 重算重写
+    无法察觉（哈希链固有上限）；mtime 存 epoch 秒，亚秒精度不保留；不去重
+
+- **`mkit/preview.py`** —— 原类型预览 + PE / ELF / Mach-O 结构视图
+  - `sniff` 覆盖 20+ 魔数（pe/elf/macho/fatmacho/png/jpeg/gif/bmp/tiff/webp/
+    pdf/zip/gzip/bz2/xz/7z/rar/tar/sqlite/regf/evtx/text/json/xml/html）
+  - `text_preview`（UTF-8/GBK/UTF-16LE 自动尝试并标注编码、控制字符转义）、
+    `hex_preview`、`media_info`（PNG/JPEG/GIF/BMP/PDF/RIFF/MP4/EBML/OOXML）
+  - `pe_info`（DOS→COFF→Optional→节表→导入表→证书表/.NET 提示）、
+    `elf_info`（class/endian/machine/程序头/节名）、`macho_info`
+    （含 fat 架构、LC_SEGMENT_64、LC_MAIN、LC_LOAD_DYLIB）
+  - 自检 301 项
+  - 修正：ISO BMFF 的兼容 brand 在 `ftyp` box **内部**（偏移 16 到盒长），
+    不是独立 box；PE 证书表判 PKCS#7 要取 **2 字节**切片比 `30 82`
+    （取 4 字节永远不等于 2 字节常量）
+  - 未做：GGUF 结构视图
+
+### 验证
+
+- `veracrypt` 62 项、`vss` 40 项、`casebook` 10 项、`nilfs2` 45 项、
+  `preview` 301 项各自通过；`filevault2` 八节通过
+- 六个模块都只在合成镜像上验证过，没有对应格式的真实样本可比对，
+  各自 docstring 已逐条标注
+
+
 ## [1.7.1] - 2026-11-16
 
 三个文件系统模块。

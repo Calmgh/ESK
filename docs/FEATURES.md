@@ -101,7 +101,7 @@
 | BeFS | ✅ | **[*]** | `retrofs`（超级块 @512 + inode + dirent） |
 | GFS2 | ✅ | **[*]** | `gfs2`（超级块/资源组/dinode/stuffed 与 EXHASH 目录/元树；rindex 与 readlink 未做） |
 | OCFS2 | ✅ | `[ ]` | 计划 |
-| NILFS2 | ✅ | `[ ]` | 计划 |
+| NILFS2 | ✅ | **[*]** | `nilfs2`（段摘要/超级根/checkpoint/B-tree；SUFILE 语义与 ss_sumsum 强校验未做，无真实镜像验证） |
 | bcachefs | ✅ | `[ ]` | 计划 |
 | **exFAT（ESK 独有前置）** | ✅ | **[*]** | 见上 |
 
@@ -114,10 +114,10 @@
 |---|:---:|:---:|---|
 | LUKS1 / LUKS2 | ✅ | **[~]** | `luks`（**只解头，不解锁**） |
 | BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码 + .BEK 启动密钥解锁、XTS/CBC/diffuser；TPM·口令只枚举） |
-| VeraCrypt | ✅ | `[ ]` | 计划 |
-| FileVault 2 | ✅ | `[ ]` | 计划 |
+| VeraCrypt | ✅ | **[*]** | `veracrypt`（AES-XTS + 多 PRF + PIM；whirlpool/stribog/Serpent/Twofish/Argon2id 抛 NotImplementedError，无真实卷验证） |
+| FileVault 2 | ✅ | **[*]** | `filevault2`（AES-KW 按 RFC 3394 官方向量验证 + XTS + 密钥链；加密上下文定位为启发式，无真实镜像验证） |
 | Windows EFS | — | `[ ]` | 计划 |
-| NTFS VSS 卷影 | ✅ | `[ ]` | 计划 |
+| NTFS VSS 卷影 | ✅ | **[*]** | `vss`（catalog + 描述符 + full/overlay/零三种块；多存储链与 previous_store 抛 NotImplementedError） |
 | 钱包/助记词 | — | **[*]** | `wallet`（**ESK 独有**） |
 | iOS 备份加密 | ✅ | **[*]** | `iosbackup_crypto` |
 
@@ -125,12 +125,12 @@
 
 | 能力 | LovelyCarve | ESK | 模块 / 说明 |
 |---|:---:|:---:|---|
-| 案件管理 + 哈希链审计 | ✅ | `[ ]` | 计划（`chain` 有 keccak，未接审计） |
-| 卷快照 / 文件索引落盘 | ✅ | `[ ]` | 计划 |
-| 原类型预览（文本/十六进制/图片/音视频/PDF/Office） | ✅ | `[ ]` | 计划 |
+| 案件管理 + 哈希链审计 | ✅ | **[*]** | `casebook`（Case + AuditLog 哈希链，篡改/删行/插行/改 prev 均可定位；**无签名或外部锚**，整链重写无法察觉） |
+| 卷快照 / 文件索引落盘 | ✅ | **[~]** | `casebook` 做了文件索引落盘（sqlite）；**卷快照（对分析状态做快照）未实现** |
+| 原类型预览（文本/十六进制/图片/音视频/PDF/Office） | ✅ | **[*]** | `preview`（sniff 20+ 类型、text/hex 预览、PNG/JPEG/GIF/BMP/PDF/RIFF/MP4/OOXML 元信息） |
 | SQLite 浏览（WAL 回放 / 删除恢复） | ✅ | **[*]** | `sqlite_forensic`（WAL 帧校验与回放、freeblock 扫描、已删表检测） |
 | Realm 浏览 | ✅ | `[ ]` | 低优先 |
-| PE / ELF / Mach-O / GGUF 结构视图 | ✅ | `[ ]` | 计划（`revkit` 有部分） |
+| PE / ELF / Mach-O / GGUF 结构视图 | ✅ | **[~]** | `preview` 已做 PE / ELF / Mach-O（含证书表、导入表、fat 架构）；**GGUF 未做** |
 | 校验 MD5/SHA-1/SHA-256/SM3 | ✅ | **[*]** | `hashcalc` |
 | E01 采集哈希核对 | ✅ | **[*]** | `hashcalc.verify_ewf_hash` |
 | 全局搜索（多编码/正则/未分配） | ✅ | **[*]** | `search` |
