@@ -26,16 +26,16 @@
 | UDF 1.02–2.01 | ✅ | **[*]** | `udf`（VRS / AVDP 双锚点 / PVD·PD·LVD / FSD / FE / FID，short_ad·long_ad·embedded） |
 | AD1（FTK 逻辑镜像） | ✅ | **[~]** | `ad1`（段发现/头/块解压/目录树；ADCRYPT 未实现） |
 | DMG（Apple） | ✅ | **[*]** | `dmg`（koly/plist/mish/zlib/bzip2/LZMA；ADC·LZFSE 未实现） |
-| Parallels PHDI | ✅ | `[ ]` | 计划 |
-| DiskGenius PMFX | ✅ | `[ ]` | 计划 |
-| 雷电模拟器 LDBK | ✅ | `[ ]` | 计划 |
+| Parallels PHDI | ✅ | **[*]** | `containers`（BAT 稀疏读，未分配块返回零） |
+| DiskGenius PMFX | ✅ | **[~]** | `containers`：**只识别**，无公开规范，不解析字段 |
+| 雷电模拟器 LDBK | ✅ | **[~]** | `containers`：**只识别**，无公开规范，不解析字段 |
 | 光盘 BIN / CUE | ✅ | **[*]** | `bincue`（8 种扇区模式、多轨多文件、CCD/MDS 头部、SUB Q 通道） |
-| 小米 HDR1 | ✅ | `[ ]` | 计划 |
-| Buffalo ENC / TRX | ✅ | `[ ]` | 计划 |
-| TP-Link SafeLoader | ✅ | `[ ]` | 计划 |
-| U-Boot legacy uImage | ✅ | `[ ]` | 计划 |
-| Netgear CHK | ✅ | `[ ]` | 计划 |
-| Sercomm NAND ZIP | ✅ | `[ ]` | 计划 |
+| 小米 HDR1 | ✅ | **[~]** | `containers`：**只识别**，无公开规范，不解析字段 |
+| Buffalo ENC / TRX | ✅ | **[~]** | `containers`（DNI 全字段；ENC 加密体不解密） |
+| TP-Link SafeLoader | ✅ | **[*]** | `containers`（512 B 头，0xA5/0x55AA 双重确认，按 ofs 切段） |
+| U-Boot legacy uImage | ✅ | **[*]** | `containers`（64 B 头 + hcrc/dcrc + gzip/bzip2/lzma） |
+| Netgear CHK | ✅ | **[*]** | `containers`（40 B 头 + board_id + 区域/版本 + CRC） |
+| Sercomm NAND ZIP | ✅ | **[*]** | `containers`（512 B 头，偏移 511 校验和） |
 | UBI（含内嵌 SquashFS/UBIFS） | ✅ | **[*]** | `ubi`（EC/VID 头 + PEB 扫描 + 卷重组；UBIFS 顺序 LEB 扫描读文件，LZO 未用真实样本验证） |
 
 ## 二、逻辑检材
@@ -91,7 +91,7 @@
 | F2FS | ✅ | **[*]** | `f2fs`（超级块/checkpoint/NAT/SIT/inode/目录；加密只识别） |
 | EROFS | ✅ | `[ ]` | 计划（Android） |
 | QNX4 / QNX6 | ✅ | **[*]** | `retrofs`（QNX4 64 B inode / QNX6 大端 @0x2000） |
-| UBIFS v4/v5 | ✅ | `[ ]` | 计划 |
+| UBIFS v4/v5 | ✅ | **[*]** | `ubi`（顺序 LEB 扫描读文件；**未做 IDX 索引遍历**，GC 残留旧节点按 sqnum 取舍） |
 | JFFS2 | ✅ | **[*]** | `flashfs`（日志式多版本重建 + unlink 取证；RTIME/RUBIN/LZO 未实现） |
 | YAFFS1 / YAFFS2 | ✅ | **[*]** | `flashfs`（几何自动判定 + tags 解析；ECC 不校验） |
 | Minix FS V1/V2/V3 | ✅ | **[*]** | `classicfs`（三级间接 + 16/32/64 B 目录项） |
