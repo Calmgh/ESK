@@ -32,7 +32,9 @@ Amiga OFS / FFS（都实现）：
         · 写操作
         · 位图分配（只报告 bmFlag / bmPages，不据此判空闲块）
         · 目录缓存块（T_DIRC=33）加速（直接走哈希表，结果等价）
+        · 引导块里的 rootBlock 字段（软盘 880）不用于定位根块，根块固定取块 1
         · 硬链接目录项的跨卷解析（只按块号跟随）
+        · 目录项 size 恒报 0（块头里没有目录字节数，要列目录才知道项数）
 
 BeOS BeFS：
     已实现：
@@ -48,7 +50,7 @@ BeOS BeFS：
           create_time / last_modified_time / parent / attributes / type / size
         · 数据流：direct[12] + indirect + double_indirect 三级，
           按 max_direct_range / max_indirect_range / max_double_indirect_range 分区
-        · 小内联数据流（size 很小且无块游程时按 datastream 为空处理）
+        · 数据流长度以 ds.size 为准；块游程不足时返回已读到的前缀
         · 线性目录（befs_dirent 16 字节：inode_num / offset / dir_end / pad，
           名字从 offset 到 dir_end）
         · 短符号链接（inode->data.symlink，144 字节）
@@ -104,6 +106,46 @@ QNX6：
         · Audi MMI 3G 变体超级块（qnx6_mmi_super_block，布局不同）
         · 第二份超级块的选择（serial 比较）；只读第一份
         · 位图 / 分配组空闲统计
+
+与题面/常见说法不同的地方（以头文件为准，已查证）
+------------------------------------------------
+    · Amiga secType：-3 是 ST_FILE，不是目录；ST_USERDIR 是 2。
+      完整表：1=ST_ROOT、2=ST_USERDIR、3=ST_SOFTLINK、4=ST_LINKDIR、
+      -3=ST_FILE、-4=ST_LINKFILE（ADFlib adf_blk.h 的 ADF_ST_*）。
+    · Amiga 根块里 0x0C 是 hashTableSize(=72)、0x08 是 highSeq；
+      位图表从 0x138 起（bmFlag=-1 表示有效），0x1A0 是 bmExt。
+      文件头块同一区域（0x18 起 72 项）是 dataBlocks[]，不是哈希表。
+    · BeFS 超级块第三个魔数是 0x15B6830E，不是 0x00414A53；
+      超级块到 indices 就结束（132 字节），没有 blocks 字段。
+    · BeFS last_modified_time 是 64 位 bigtime_t，低 16 位是唯一性计数器，
+      Unix 秒 = 值 >> 16（Linux fs/befs/linuxvfs.c 的做法）。
+    · QNX4 inode 项顺序：di_size(16) / di_first_xtnt(20) / di_xblk(28) /
+      四个时间(32..48) / di_num_xtnts(48) / mode(50) / uid(52) / gid(54) /
+      nlink(56) / di_zero(58) / di_type(62) / di_status(63)。
+    · QNX4 每 512 字节块放 8 个 inode，inode 号 = block*8 + slot
+      （Linux qnx4_iget：block = ino/8、slot = ino%8）。题面「inode 号直接是
+      块号、每块 1 个 inode」不成立。extent 里的块号是 1 基（dev = blk-1）。
+      另注：Linux qnx4_readdir 用 `blk*8+ix-1` 算 ino，与 iget 的映射差 1，
+      本实现统一按 iget 的映射，不复制该偏差。
+    · QNX6 超级块里没有 RootDir/Inodes 这样的块游程，而是四个 qnx6_root_node
+      （Inode / Bitmap / Longfile / Unknown，各 80 字节：size u64 + ptr[16] +
+      levels + mode）。根目录靠 inode 号 1 从 Inode 流里取。
+    · QNX6 目录项是 32 字节槽：de_inode u32 / de_size u8 / de_fname[27]；
+      de_size==0xFF 表示长文件名，后面接 de_long_inode u32 + de_checksum u32。
+    · QNX6 超级块校验和是 crc32_be(0, sb[8..512])，不是 u32 求和。
+    · QNX6 数据块号要加 s_blks_off（= 0x2000/bs + 0x1000/bs）才是设备块号。
+
+仍是推断、没有权威源可核的
+--------------------------
+    · BeFS 线性目录项布局按题面给的 16 字节（inode_num / offset / dir_end /
+      pad）实现：Linux 的 befs 驱动只走 B+ 树索引，不解析这段线性数组，
+      Haiku 的 bfs_disk.h 取不到（404），所以这一项是推断。
+    · BeFS double_indirect 的项语义：Linux 的 befs_find_brun_dblindirect 里
+      `indir_indx = leftover / diblklen` 恒为 0（diblklen 也重复乘了
+      BEFS_DBLINDIR_BRUN_LEN），按源码字面无法遍历整个区。本实现按
+      「一个双间接项 -> 4 个块的间接游程，游程内每块 bs/8 个 iaddr，
+      每个 iaddr 映射 1 个数据块」实现，自检镜像按同一约定构造。
+    · QNX6 Bitmap / Unknown 节点只记录不解析（不据此算空闲块）。
 
 契约：只依赖 sub.read(offset, size) 与 sub.size，零第三方依赖。
 """
@@ -2503,6 +2545,69 @@ if __name__ == "__main__":
     assert fs._ds_block(f.ds, 0) == 4
     assert fs._ds_block(f.ds, 1) == 6 and fs._ds_block(f.ds, 2) == 7
 
+    # ---- BeFS：double_indirect 数据流 ----
+    def befs_build_double(content):
+        BS = 1024
+        img = bytearray(BS * 12)
+        so = BEFS_SUPER_OFFSET
+        put(img, so, b"ESKDBL")
+        u32(img, so + BS_MAGIC1, BEFS_MAGIC1)
+        u32(img, so + BS_BYTEORDER, BEFS_BYTEORDER_NATIVE)
+        u32(img, so + BS_BLOCK_SIZE, BS)
+        u32(img, so + BS_BLOCK_SHIFT, 10)
+        u64(img, so + BS_NUM_BLOCKS, 12)
+        u64(img, so + BS_USED_BLOCKS, 10)
+        u32(img, so + BS_INODE_SIZE, 512)
+        u32(img, so + BS_MAGIC2, BEFS_MAGIC2)
+        u32(img, so + BS_BLOCKS_PER_AG, 1 << 10)
+        u32(img, so + BS_AG_SHIFT, 10)
+        u32(img, so + BS_NUM_AGS, 1)
+        u32(img, so + BS_FLAGS, BEFS_CLEAN)
+        u32(img, so + BS_MAGIC3, BEFS_MAGIC3)
+        struct.pack_into(">IHH", img, so + BS_ROOT_DIR, 0, 1, 1)
+
+        def inode(blk, mode, dtype, size, direct, max_direct, indirect,
+                  max_indirect, dbl, max_double):
+            o = blk * BS
+            u32(img, o + BI_MAGIC1, BEFS_INODE_MAGIC)
+            struct.pack_into(">IHH", img, o + BI_INODE_NUM, 0, blk, 1)
+            u32(img, o + BI_MODE, mode)
+            u32(img, o + BI_FLAGS, 1)
+            u32(img, o + BI_TYPE, dtype)
+            u32(img, o + BI_INODE_SIZE, 512)
+            struct.pack_into(">IHH", img, o + BI_DATA, *direct)
+            u64(img, o + BI_DATA + DS_MAX_DIRECT, max_direct)
+            struct.pack_into(">IHH", img, o + BI_DATA + DS_INDIRECT, *indirect)
+            u64(img, o + BI_DATA + DS_MAX_INDIRECT, max_indirect)
+            struct.pack_into(">IHH", img, o + BI_DATA + DS_DOUBLE, *dbl)
+            u64(img, o + BI_DATA + DS_MAX_DOUBLE, max_double)
+            u64(img, o + BI_DATA + DS_SIZE, size)
+
+        fname = b"dbl.bin"
+        dent = struct.pack(">IIII", 3, 16, 16 + len(fname), 0) + fname
+        put(img, 2 * BS, dent)
+        put(img, 4 * BS, content[:BS])
+        struct.pack_into(">IHH", img, 5 * BS, 0, 6, 4)     # 双间接[0] -> 间接游程 6..9
+        struct.pack_into(">IHH", img, 6 * BS, 0, 10, 1)    # 间接游程块 6 第 0 项 -> 10
+        struct.pack_into(">IHH", img, 6 * BS + 8, 0, 11, 1)
+        put(img, 10 * BS, content[BS:2 * BS])
+        put(img, 11 * BS, content[2 * BS:3 * BS])
+
+        inode(1, 0o040000 | 0o755, 2, len(dent), (0, 2, 1), BS,
+              (0, 0, 0), 0, (0, 0, 0), 0)
+        inode(3, 0o100000 | 0o644, 1, 3 * BS, (0, 4, 1), BS,
+              (0, 0, 0), BS, (0, 5, 1), 3 * BS)
+        return bytes(img)
+
+    dbn = bytes((i * 17 + 9) & 0xFF for i in range(3 * 1024))
+    fs = BeFS(Buf(befs_build_double(dbn)))
+    f = fs.listdir()[0]
+    print("  BeFS double: %r size=%d dbl_max=%d"
+          % (f.name, f.size, f.ds["max_double"]))
+    assert f.size == 3 * 1024
+    assert fs._ds_block(f.ds, 1) == 10 and fs._ds_block(f.ds, 2) == 11
+    assert fs.read_file(f) == dbn, "BeFS double_indirect 读出的内容不对"
+
     # ---- QNX4：扩展块（xblk）链 ----
     def qnx4_build_xblk(content):
         BS = 512
@@ -2543,10 +2648,10 @@ if __name__ == "__main__":
     assert f.extents == [(4, 1), (6, 1)], f.extents
     assert fs.read_file(f) == span, "QNX4 扩展块链读出的内容不对"
 
-    # ---- QNX6：长文件名 + 一级间接 ----
-    def qnx6_build_ext(content_hello, content_ind, longname):
+    # ---- QNX6：长文件名 + 一级 / 二级间接 ----
+    def qnx6_build_ext(content_hello, content_ind, longname, deep):
         BS = 4096
-        nblk = 10
+        nblk = 13
         img = bytearray(BS * nblk)
         so = QNX6_SUPER_OFFSET
 
@@ -2583,7 +2688,8 @@ if __name__ == "__main__":
             img[off + Q6I_STATUS] = status
 
         base = 3 * BS
-        ents = [(1, b"."), (1, b".."), (2, b"hello.txt"), (3, b"ind.bin")]
+        ents = [(1, b"."), (1, b".."), (2, b"hello.txt"), (3, b"ind.bin"),
+                (5, b"lvl2.bin")]
         dirdata = bytearray()
         for ino, nm in ents:
             dirdata += struct.pack(">IB", ino, len(nm)) + nm.ljust(27, b"\x00")
@@ -2599,7 +2705,11 @@ if __name__ == "__main__":
               QNX6_FILE_NORMAL)
         inode(base + 2 * QNX6_INODE_SIZE, len(content_ind), 0o100644, 4, 1,
               QNX6_FILE_NORMAL)
-        inode(base + 3 * QNX6_INODE_SIZE, 11, 0o100644, 9, 0, QNX6_FILE_NORMAL)
+        inode(base + 3 * QNX6_INODE_SIZE, 10, 0o100644, 6, 0, QNX6_FILE_NORMAL)
+        # ino 5：二级间接 —— ptr[0]=7 -> dev 10（一级表）-> 8 -> dev 11（0 级表）
+        #          -> 9 -> dev 12（数据）
+        inode(base + 4 * QNX6_INODE_SIZE, len(deep), 0o100644, 7, 2,
+              QNX6_FILE_NORMAL)
 
         put(img, 4 * BS, bytes(dirdata))
         put(img, 5 * BS, content_hello)
@@ -2608,21 +2718,30 @@ if __name__ == "__main__":
         put(img, 8 * BS, content_ind)
         put(img, 9 * BS, b"long name!")
         put(img, 6 * BS, struct.pack(">H", len(longname)) + longname)
+        u32(img, 10 * BS, 8)
+        u32(img, 11 * BS, 9)
+        put(img, 12 * BS, deep)
         return bytes(img)
 
     longname = b"a_very_long_filename_over_27chars.dat"
     assert len(longname) > QNX6_SHORT_NAME_MAX
-    fs = Qnx6FS(Buf(qnx6_build_ext(b"hi qnx6\n", b"indirect qnx6\n", longname)))
+    deep = b"two level qnx6\n"
+    fs = Qnx6FS(Buf(qnx6_build_ext(b"hi qnx6\n", b"indirect qnx6\n", longname,
+                                   deep)))
     names = [(e.name, e.ino, e.name_checksum_ok) for e in fs.listdir()]
     print("  QNX6 扩展: %s" % names)
     assert [n for n, _, _ in names] == [".", "..", "hello.txt", "ind.bin",
-                                        _dec(longname)], names
-    assert names[4][2], "长文件名校验和应为 True"
+                                        "lvl2.bin", _dec(longname)], names
+    assert names[5][2], "长文件名校验和应为 True"
     ind = [e for e in fs.listdir() if e.name == "ind.bin"][0]
     assert ind.node.levels == 1
     assert fs.read_file(ind) == b"indirect qnx6\n", "QNX6 一级间接读错了"
     assert fs.map_block(ind.node, 0) == 8, fs.map_block(ind.node, 0)
-    ln = fs.listdir()[4]
+    lv2 = [e for e in fs.listdir() if e.name == "lvl2.bin"][0]
+    assert lv2.node.levels == 2
+    assert fs.map_block(lv2.node, 0) == 12, fs.map_block(lv2.node, 0)
+    assert fs.read_file(lv2) == deep, "QNX6 二级间接读错了"
+    ln = fs.listdir()[5]
     assert fs.read_file(ln) == b"long name!"
 
     print("-- 扩展路径通过 --")
