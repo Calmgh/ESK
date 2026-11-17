@@ -104,6 +104,19 @@ _LAYOUT_ALIASES = {
     "parity-0": "parity_0", "parity_0": "parity_0", "p0": "parity_0", "4": "parity_0",
     "near": "near", "n": "near", "offset": "offset", "o": "offset",
     "far": "far", "f": "far",
+    # raidmeta 按 mdadm 的 layout_ddf2md 产出的名字，必须能直接喂进本模块，
+    # 否则「DDF 元数据解析」和「条带几何」两半接不上（会抛 RaidError）。
+    #   stripe               -> RAID0 无奇偶校验
+    #   fixed-parity         -> RAID4 固定末位校验
+    #   rotating-n-restart   -> RAID6 左非对称（与 RAID5 的 left-asymmetric 同序）
+    #   rotating-zero-restart-> RAID6 右非对称
+    #   rotating-n-continue  -> RAID6 左对称
+    "stripe": "flat",
+    "fixed-parity": "fixed",
+    "rotating-n-restart": "left-asym",
+    "rotating-zero-restart": "right-asym",
+    "rotating-0-restart": "right-asym",
+    "rotating-n-continue": "left",
 }
 
 
@@ -1262,6 +1275,25 @@ def _selftest():
     assert r.stats["unrecoverable"] > 0 and r.degraded() and r.warnings()
     print("     运行期双盘掉线：unrecoverable=%d，degraded=%s，置 0 且留痕"
           % (r.stats["unrecoverable"], r.degraded()))
+
+    # ---------------- DDF 名字接缝 ----------------
+    # raidmeta 按 mdadm 的 layout_ddf2md 产出这些名字；它们必须能直接喂进本模块，
+    # 否则「DDF 元数据解析」与「条带几何」两半接不上（以前 stripe / fixed-parity /
+    # rotating-* 五种会抛 RaidError）。
+    ddf_names = [
+        ("stripe", 0), ("mirror", 1), ("fixed-parity", 4),
+        ("left-asymmetric", 5), ("right-asymmetric", 5), ("left-symmetric", 5),
+        ("rotating-n-restart", 6), ("rotating-zero-restart", 6),
+        ("rotating-n-continue", 6), ("near", 10), ("offset", 10),
+    ]
+    for lay, lvl in ddf_names:
+        name = _canon(lay)
+        assert name in LAYOUTS[lvl], \
+            "DDF 布局 %r 归一到 %r 后不属于级别 %d 的可选布局 %r" \
+            % (lay, name, lvl, list(LAYOUTS[lvl]))
+    step[0] += 1
+    print("      raidmeta 的 %d 个 DDF 布局名全部能归一到合法条带布局"
+          % len(ddf_names))
 
     # ---------------- 汇总 ----------------
     print("-" * 60)

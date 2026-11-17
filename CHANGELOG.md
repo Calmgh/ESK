@@ -3,6 +3,34 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.10] - 2026-11-17
+
+fix(v1.7.10): 修通 DDF 布局名到条带几何的接缝
+
+修掉一个真实缺陷：`raidmeta` 按 mdadm 的 layout_ddf2md 产出布局名，但这些名字
+里有一半喂不进 `raid.py`，两半功能接不上。
+
+实测（修复前）：
+    lvl0  stripe                 -> RaidError: 未知条带布局 'stripe'
+    lvl4  fixed-parity           -> RaidError: 未知条带布局 'fixed-parity'
+    lvl6  rotating-n-restart     -> RaidError: 未知条带布局 'rotating-n-restart'
+    lvl6  rotating-zero-restart  -> RaidError: 未知条带布局 'rotating-zero-restart'
+    lvl6  rotating-n-continue    -> RaidError: 未知条带布局 'rotating-n-continue'
+即 11 种 DDF 布局里有 5 种通道是断的——DDF 元数据能解析出来，却没法拿去重组。
+
+修法：在 raid._LAYOUT_ALIASES 里补上这五个映射
+    stripe                -> flat        （RAID0 无奇偶校验）
+    fixed-parity          -> fixed       （RAID4 固定末位校验）
+    rotating-n-restart    -> left-asym   （RAID6 左非对称）
+    rotating-zero-restart -> right-asym  （RAID6 右非对称）
+    rotating-n-continue   -> left        （RAID6 左对称）
+
+并在 raid 自检里加一组永久断言：把 raidmeta 产出的 11 个布局名逐个过 _canon，
+断言归一到名字都属于该级别的可选布局，防止以后再漂。
+
+验证：raid 自检（现 12 组）连跑两次 exit 0，输出
+「raidmeta 的 11 个 DDF 布局名全部能归一到合法条带布局」；raidmeta 自检仍 exit 0。
+
 ## [1.7.9] - 2026-11-17
 
 ### 新增 / 升级
