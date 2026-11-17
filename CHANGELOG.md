@@ -3,6 +3,57 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.9] - 2026-11-17
+
+### 新增 / 升级
+
+- **`mkit/xfs_bmap.py`**（新增）—— XFS bmap b-tree 独立解析器
+  - `decode_bmbt_rec` / `encode_bmbt_rec`：`xfs_bmbt_rec` 的位域编解码。
+    **state 是 bit63 单比特**、startoff 是 bit9..62 共 **54 位**、
+    startblock 52 位、blockcount 21 位
+  - `read_bmap(reader, fork, blocksize, inode_size, core, forkoff=0)`：
+    内联根 `xfs_bmdr_block` → 外部 `BMAP`(头 24 B) / `BMA3`(头 72 B) 块，
+    多级下钻、visited 集合防环、深度上限、ptr 越界检查
+  - **fork_len 的两种解释都当候选**：A = `(forkoff<<3) - core`（真实内核
+    `XFS_DFORK_DSIZE` 语义）、B = `forkoff<<3`；先按
+    `4 <= fork_len <= len(fork)` 过滤，再对每个候选跑**整棵树**，
+    只有根与沿途所有子块的 magic / level / numrecs 全自洽才命中
+  - 空 fork（`b""` / None / 全零）返回 `[]`，结构损坏才抛 `XfsBmapError`
+  - 自检 12 项
+
+- **`mkit/xfs.py`**（升级）—— 补上 **b-tree 格式 inode**（`di_format == 3`）
+  - `inode()` 的 BTREE 分支不再抛 `NotImplementedError`，改为调
+    `xfs_bmap.read_bmap` 展开成与 extent 相同的四元组
+  - `read_file()` / `listdir()` 同时接受 EXTENTS 与 BTREE：按 startoff 排序后
+    拼接；b-tree 目录的叶子记录指向目录数据块，逐块按 magic 判类型
+  - 新增 **dir2 目录块解析**（`XD2B`/`XDB3` 块格式 + `XD2D`/`XDD3` 数据块）：
+    数据项是 `u64 inumber + u8 namelen + name + u8 ftype`，按 8 字节对齐；
+    空闲区以 freetag `0xFFFF` 开头。dir3 数据区起点有 64/56/48/16 几种可能，
+    **不写死**，用「走完刚好到块尾」自校验挑
+  - **修掉两处位域/偏移错误**：
+    1. 时间戳原来读 24/32/40，把 v2 的 `di_pad` / v3 的 `di_big_nextents`
+       当成了 atime；正确是 **32/40/48**
+    2. `xfs_bmbt_rec` 原来按「2 位 state + 53 位 startoff」解，位宽错；
+       改由 `decode_bmbt_rec` 统一处理（单比特 state + 54 位 startoff）
+    3. v3 的 `nextents` 是 64 位：低 32 位在 `di_nextents@76`，
+       高 32 位在 `di_big_nextents@24`
+  - 自检扩充：b-tree 文件（内联根 level=1 → 外部叶块 2 条记录 → 4196 B
+    逐字节比对）、b-tree 目录（叶块 → dir2 数据块，列出 2 项）、
+    `bmbt_rec` 位域手算对拍 + 编解码互逆、时间戳偏移
+
+### 未实现（docstring 已写明）
+
+- **attr fork**（只按 `di_forkoff` 截断 data fork 长度，不解析属性 fork）
+- **rmap / 其它 btree 类型**（只覆盖 bmap）
+- **BMA3 的 crc / owner / uuid 不校验**，只按头部长度跳过
+- keys 不做二分（按 numrecs 线性遍历 ptr，等价且 keys 全零也能解）
+- 实时设备（realtime）、log 回放、写操作
+
+### 验证
+
+- `xfs_bmap` 自检 12 项、`xfs` 自检（含新增 b-tree 用例）各连跑两次均 exit 0
+- 只在合成镜像上验证，没有真实 XFS 镜像可比对
+
 ## [1.7.8] - 2026-11-17
 
 ### 新增

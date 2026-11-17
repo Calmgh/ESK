@@ -82,7 +82,7 @@
 | UDF | ✅ | **[*]** | `udf`（同上） |
 | Btrfs | ✅ | **[*]** | `btrfs`（超级块 / chunk 树合并 / 目录遍历 / 读文件 / zlib） |
 | ZFS | ✅ | **[*]** | `zfs`（uberblock/blkptr/fletcher4/ZAP/目录；**SA 未解，文件精确长度与 mtime 取不到**；无真实镜像验证） |
-| XFS | ✅ | **[~]** | `xfs`（超级块/AG 头/短格式目录/extent 文件；b-tree 格式 inode 未支持） |
+| XFS | ✅ | **[*]** | `xfs`（超级块/AG/inode/短格式与 dir2 目录/extent 与 **b-tree inode**，经 `xfs_bmap`；**attr fork 与 rmap 未做**） |
 | ReFS | ✅ | **[*]** | `refs`（超级块 + 容器表 + 对象表 B+ 树） |
 | SquashFS v1–v4 | ✅ | **[~]** | `squashfs`（v4，gzip/xz；其他压缩算法抛 NotImplementedError） |
 | CramFS v2 | ✅ | **[*]** | `cramfs`（位域 inode、块指针表、zlib/未压缩/空洞/DIRECT_PTR） |

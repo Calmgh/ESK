@@ -8,7 +8,7 @@
 [![Deps](https://img.shields.io/badge/required%20deps-1-lightgrey)]()
 [![Author](https://img.shields.io/badge/ESK-Calmgh06-orange)]()
 
-> 版本 1.7.8　｜　Python 3.11+　｜　Windows / Linux / macOS　｜　48 个模块
+> 版本 1.7.9　｜　Python 3.11+　｜　Windows / Linux / macOS　｜　48 个模块
 
 ---
 
@@ -67,7 +67,7 @@
 
 | 部分 | 内容 | 规模 |
 |---|---|---|
-| **`mkit/`** | 核心库：镜像与容器、NTFS/ext4/FAT/exFAT/XFS/HFS/SquashFS/CramFS/ROMFS/ISO、APFS、注册表、哈希、搜索、雕刻、SQLite 取证、隐写、钱包、加密头、各平台痕迹 | **75 个模块 / 约 63,000 行** |
+| **`mkit/`** | 核心库：镜像与容器、NTFS/ext4/FAT/exFAT/XFS/HFS/SquashFS/CramFS/ROMFS/ISO、APFS、注册表、哈希、搜索、雕刻、SQLite 取证、隐写、钱包、加密头、各平台痕迹 | **76 个模块 / 约 63,000 行** |
 | **`ext/`** | 实战中补写的扩展：APFS 文件级读取、VMDK/LVM2/VHDX、RAID5 重建、像素级比对等 | 34 个模块 |
 
 **适合谁用**：做 CTF 取证题、做真实案件的初检、写自动化提取脚本、需要绕开商业工具限制的场景。
@@ -276,6 +276,7 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 | `partrecover.py` | 30.0 KB | **分区表**：MBR/EBR/GPT 解析、特征扫描、分区表重建 |
 | `realm.py` | 42.0 KB | **Realm DB**：表/列/行只读浏览 |
 | `minifs.py` | 33.0 KB | **VxWorks MiniFS**：变体 A/B + LZMA-alone |
+| `xfs_bmap.py` | 25.6 KB | **XFS bmap b-tree**：bmbt_rec 编解码、BMAP/BMA3 下钻 |
 | `timeline.py` | 56.2 KB | **时间线**：6 种时间戳换算、CSV/JSONL/SQLite 导出 |
 | `ad1.py` | 31.8 KB | **AD1** 逻辑镜像：段发现、块解压、目录树 |
 | `dmg.py` | 24.4 KB | **Apple DMG**：koly/plist/mish、zlib/bzip2/LZMA |
@@ -555,7 +556,7 @@ ESK/
 ├── requirements.txt
 ├── esk_cli.py              命令行入口（images / fs / hash / search / carve / luks / session）
 ├── selftest_new.py         包级自检
-├── mkit/                   核心库（75 模块 / 约 63,000 行）
+├── mkit/                   核心库（76 模块 / 约 63,000 行）
 ├── ext/                    自建扩展（36 模块）
 ├── examples/               可运行示例（6 个）
 │   ├── 00_selftest.py

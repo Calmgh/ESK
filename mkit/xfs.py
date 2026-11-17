@@ -28,6 +28,17 @@ import struct
 
 __all__ = ["Xfs", "XFS_SB_MAGIC", "XFS_DINODE_FMT_EXTENTS"]
 
+try:
+    from .xfs_bmap import (read_bmap, decode_bmbt_rec, encode_bmbt_rec,
+                           XfsBmapError)
+except ImportError:                                  # 直接跑本脚本时
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(
+        _os.path.abspath(__file__))))
+    from mkit.xfs_bmap import (read_bmap, decode_bmbt_rec,
+                               encode_bmbt_rec, XfsBmapError)
+
 XFS_SB_MAGIC = b"XFSB"
 XFS_AGF_MAGIC = b"XAGF"
 XFS_AGI_MAGIC = b"XAGI"
@@ -42,6 +53,14 @@ XFS_DINODE_FMT_EXTENTS = 2
 XFS_DINODE_FMT_BTREE = 3
 XFS_DINODE_FMT_UUID = 4
 XFS_DINODE_FMT_RMAP = 5
+
+# dir2 目录块/叶子块的 magic：
+#   XD2B = v4 块格式（数据项 + 尾部 leaf 数组）
+#   XDB3 = v5 块格式
+#   XD2D = v4 数据块
+#   XDD3 = v5 数据块
+DIR2_BLOCK_MAGICS = (b"XD2B", b"XDB3", b"XD2D", b"XDD3")
+DIR2_FREE_TAG = 0xFFFF
 
 FORMAT_NAME = {
     0: "dev", 1: "local", 2: "extents", 3: "btree", 4: "uuid", 5: "rmap",
@@ -277,11 +296,17 @@ class Xfs(object):
         nlink = struct.unpack_from(">I", raw, 16)[0] if version >= 2 else nlink_v1
         size = struct.unpack_from(">q", raw, 56)[0]
         nblocks = struct.unpack_from(">Q", raw, 64)[0]
+        # v3 的 nextents 是 64 位：低 32 位在 di_nextents@76，
+        # 高 32 位在 di_big_nextents@24（与 v2 的 di_pad 共用一个 union）
         nextents = struct.unpack_from(">I", raw, 76)[0]
+        if version >= 3:
+            nextents |= struct.unpack_from(">I", raw, 24)[0] << 32
         forkoff = raw[82] if version >= 2 else 0
-        atime = struct.unpack_from(">I", raw, 24)[0]
-        mtime = struct.unpack_from(">I", raw, 32)[0]
-        ctime = struct.unpack_from(">I", raw, 40)[0]
+        # 时间戳在 di_atime@32 / di_mtime@40 / di_ctime@48（各 sec u32 + nsec u32）。
+        # 早先这里写成 24/32/40，把 v2 的 di_pad / v3 的 di_big_nextents 当成了 atime。
+        atime = struct.unpack_from(">I", raw, 32)[0]
+        mtime = struct.unpack_from(">I", raw, 40)[0]
+        ctime = struct.unpack_from(">I", raw, 48)[0]
 
         # v3 有 176 字节的加长核
         core = 176 if version >= 3 else 100
@@ -299,25 +324,24 @@ class Xfs(object):
         elif fmt == XFS_DINODE_FMT_EXTENTS:
             exts = []
             for i in range(min(nextents, 64)):
-                e = data[i * 16:(i + 1) * 16]
-                if len(e) < 16:
+                off_e = i * 16
+                if off_e + 16 > len(data):
                     break
-                lo = struct.unpack_from(">Q", e, 0)[0]
-                hi = struct.unpack_from(">Q", e, 8)[0]
-                # xfs_bmbt_rec 位域（大端 128 位）：
-                #   l0[63:62] state | l0[61:9] startoff(53)
-                #   startblock(52) = l0[8:0] << 43 | l1[63:21]
-                #   blockcount(21) = l1[20:0]
-                state = (lo >> 62) & 0x3
-                startoff = (lo >> 9) & ((1 << 53) - 1)
-                startblock = ((lo & 0x1FF) << 43) | (hi >> 21)
-                blockcount = hi & 0x1FFFFF
-                exts.append((startblock, blockcount, startoff, state))
+                # 位域交给 xfs_bmap.decode_bmbt_rec 统一处理：
+                #   lo bit63 = unwritten；startoff 54 位；startblock 52 位；
+                #   blockcount 21 位。早先这里按「2 位 state + 53 位 startoff」
+                #   解，位宽是错的。
+                exts.append(decode_bmbt_rec(data, off_e))
             kw["extents"] = exts
 
         elif fmt == XFS_DINODE_FMT_BTREE:
-            raise NotImplementedError(
-                "inode %d 是 B-tree 格式（大文件/大目录），本实现未支持" % ino)
+            # bmap b-tree：内联根 xfs_bmdr_block → 外部 BMAP/BMA3 块，多级下钻。
+            # 具体解析与 fork_len 的两种歧义都交给 xfs_bmap 处理，
+            # 这里只把 data fork 与块参数传进去。
+            recs = read_bmap(self.sub, data, self.blocksize, self.inodesize,
+                             core, forkoff)
+            kw["extents"] = [(r["startblock"], r["blockcount"],
+                              r["startoff"], r["state"]) for r in recs]
 
         return XfsInode(**kw)
 
@@ -328,13 +352,18 @@ class Xfs(object):
             return inode.local_data
         if inode.format == XFS_DINODE_FMT_LOCAL:
             return inode.local_data or b""
-        if inode.format == XFS_DINODE_FMT_EXTENTS:
+        if inode.format in (XFS_DINODE_FMT_EXTENTS, XFS_DINODE_FMT_BTREE):
+            # b-tree 展开后的记录与 extent 是同一种四元组
+            # (startblock, blockcount, startoff, state)，所以这里统一处理。
+            # 按 startoff 排序是为了让乱序写入的 extent 也能按文件偏移摆对；
+            # b-tree 出来的记录本来就已升序。
+            recs = sorted(inode.extents or [], key=lambda r: r[2])
             out = bytearray()
-            for startblock, blockcount, startoff, state in inode.extents:
+            for startblock, blockcount, startoff, state in recs:
                 n = blockcount * self.blocksize
                 data = self.sub.read(startblock * self.blocksize, n)
-                if state == 1:                    # unwritten
-                    data = b"\x00" * len(data)
+                if state:                          # 1 = unwritten
+                    data = b"\x00" * n
                 out += data
                 if inode.size and len(out) >= inode.size:
                     break
@@ -350,14 +379,22 @@ class Xfs(object):
         out = []
         if ino.format == XFS_DINODE_FMT_LOCAL:
             self._parse_dir_data(ino.local_data or b"", out)
-        elif ino.format == XFS_DINODE_FMT_EXTENTS:
-            for startblock, blockcount, startoff, state in ino.extents:
-                n = blockcount * self.blocksize
-                data = self.sub.read(startblock * self.blocksize, n)
-                self._parse_dir_data(data, out)
-        elif ino.format == XFS_DINODE_FMT_BTREE:
-            raise NotImplementedError(
-                "目录 inode %d 是 B-tree 格式，本实现未支持" % ino.ino)
+        elif ino.format in (XFS_DINODE_FMT_EXTENTS, XFS_DINODE_FMT_BTREE):
+            # extent 与 b-tree 展开后都是同一串块映射。b-tree 目录的叶子记录
+            # 直接指向目录数据块，所以逐块判类型：dir2 块走 dir2 解析，
+            # 其余仍按原短格式解析（短格式实际住在 inode 的 literal area，
+            # 走不到这里，保留只是为了不改动既有行为）。
+            for startblock, blockcount, startoff, state in \
+                    sorted(ino.extents or [], key=lambda r: r[2]):
+                for b in range(blockcount):
+                    off = (startblock + b) * self.blocksize
+                    data = self.sub.read(off, self.blocksize)
+                    if not data:
+                        continue
+                    if bytes(data[0:4]) in DIR2_BLOCK_MAGICS:
+                        self._parse_dir2_block(data, out)
+                    else:
+                        self._parse_dir_data(data, out)
         return out
 
     def _parse_dir_data(self, data, out):
@@ -393,6 +430,103 @@ class Xfs(object):
             if not name:
                 continue
             out.append(XfsEntry(name.decode("utf-8", "replace"), ino, ftype))
+
+    # ---------------- dir2 目录块 ----------------
+    # XFS 的块格式目录把目录项放在数据块里，有两种布局：
+    #   · 块格式（XD2B / XDB3）：数据项 + 尾部 leaf 数组 + 最后 8 字节 (count, stale)
+    #   · 数据块（XD2D / XDD3）：只有数据项，数据区起点之前是块头
+    # dir2 数据项是：u64 inumber + u8 namelen + name[namelen] + u8 ftype，
+    # 之后按 8 字节对齐。空闲区以 freetag 0xFFFF 开头，紧跟 u16 长度。
+    def _parse_dir2_block(self, data, out):
+        """解析 dir2 目录块；返回新增的条目数"""
+        before = len(out)
+        if len(data) < 16:
+            return 0
+        magic = bytes(data[0:4])
+        bsize = len(data)
+        if magic in (b"XD2B", b"XDB3"):
+            # 块格式：尾部 8 字节是 (count, stale)，紧邻其前是 count 条 leaf 数组
+            count, stale = struct.unpack_from(">II", data, bsize - 8)
+            if count <= 0 or count * 8 + 8 > bsize:
+                return 0
+            leaf_start = bsize - 8 - count * 8
+            live = count - stale if 0 <= stale <= count else count
+            for i in range(live):
+                addr = struct.unpack_from(">I", data, leaf_start + i * 8 + 4)[0]
+                self._dir2_entry_at(data, addr, out)
+            return len(out) - before
+
+        # 数据块：数据区起点随版本不同，用「走完刚好到块尾」自校验挑一个
+        best = None
+        for start in self._dir2_data_offsets(magic):
+            if start >= bsize:
+                continue
+            ents, used = self._walk_dir2_data(data, start)
+            if best is None or used > best[0]:
+                best = (used, ents)
+            if used >= bsize:
+                break
+        if best:
+            out.extend(best[1])
+        return len(out) - before
+
+    @staticmethod
+    def _dir2_data_offsets(magic):
+        """dir2 数据区可能的起点
+
+        v5（XDD3）的块头是 48 字节 blk_hdr + 12 字节 best_free + 4 字节 pad =64，
+        v4（XD2D）是 16 字节。这里把几种可能都当候选，交给
+        `_walk_dir2_data` 用「走完刚好到块尾」来判别，不把版本头长度写死。
+        """
+        if magic == b"XDD3":
+            return (64, 56, 48, 16)
+        if magic == b"XD2D":
+            return (16, 24)
+        return (16,)
+
+    def _walk_dir2_data(self, data, start):
+        """从 start 起顺序走 dir2 数据项，返回 (条目列表, 走到的偏移)"""
+        ents = []
+        p = start
+        n = len(data)
+        guard = 0
+        while p + 8 <= n:
+            guard += 1
+            if guard > 100000:
+                break
+            if struct.unpack_from(">H", data, p)[0] == DIR2_FREE_TAG:
+                ln = struct.unpack_from(">H", data, p + 2)[0]
+                if ln < 8 or p + ln > n:
+                    break
+                p += ln
+                continue
+            used = self._dir2_entry_at(data, p, ents)
+            if not used:
+                break
+            p += used
+        return ents, p
+
+    def _dir2_entry_at(self, data, off, out):
+        """解析 off 处的一条 dir2 数据项
+
+        成功返回该条占用的字节数（含尾部对齐），不是有效项返回 None。
+        """
+        n = len(data)
+        if off < 0 or off + 9 > n:
+            return None
+        if struct.unpack_from(">H", data, off)[0] == DIR2_FREE_TAG:
+            return None
+        ino = struct.unpack_from(">Q", data, off)[0]
+        namelen = data[off + 8]
+        if namelen == 0 or off + 9 + namelen + 1 > n:
+            return None
+        name = bytes(data[off + 9:off + 9 + namelen])
+        ftype = data[off + 9 + namelen]
+        used = (8 + 1 + namelen + 1 + 7) & ~7
+        if off + used > n:
+            return None
+        out.append(XfsEntry(name.decode("utf-8", "replace"), ino, ftype))
+        return used
 
     def walk(self, inode=None, _depth=0, _max=32):
         prefix = "" if inode is None else inode.name + "/" if hasattr(inode, "name") else ""
@@ -548,9 +682,84 @@ if __name__ == "__main__":
         img[off:off + len(body)] = body
 
         img[DATA_BLK * BLK:DATA_BLK * BLK + len(CONTENT)] = CONTENT
-        return bytes(img), CONTENT
 
-    img, CONTENT = build()
+        # ---- b-tree 格式的 inode（di_format = 3）----
+        # 块位规划：6 = b-tree 文件 inode，7 = b-tree 目录 inode，
+        #           8 = 文件的内联根指向的外部 BMAP 叶块，9/10 = 文件数据块，
+        #           11 = 目录的 BMAP 叶块，12 = dir2 目录数据块
+        BT_FILE_INO = 8 * 6
+        BT_DIR_INO = 8 * 7
+        BMAP_LEAF = 8
+        BT_D0, BT_D1 = 9, 10
+        DIR_LEAF = 11
+        DIR_DATA = 12
+
+        PART0 = bytes(((i * 37) & 0xFF) for i in range(BLK))
+        PART1 = bytes(((255 - i * 11) & 0xFF) for i in range(BLK))
+        BT_SIZE = BLK + 100
+        BT_EXPECT = (PART0 + PART1)[:BT_SIZE]
+        img[BT_D0 * BLK:(BT_D0 + 1) * BLK] = PART0
+        img[BT_D1 * BLK:(BT_D1 + 1) * BLK] = PART1
+
+        def mk_bmap_leaf(fsb, recs):
+            """造一个外部 bmap b-tree 块（BMA3 = CRC 版，头 72 字节，level 0）"""
+            blk = bytearray(BLK)
+            blk[0:4] = b"BMA3"
+            struct.pack_into(">H", blk, 4, 0)             # bb_level
+            struct.pack_into(">H", blk, 6, len(recs))      # bb_numrecs
+            struct.pack_into(">Q", blk, 24, fsb)           # bb_blkno
+            p = 72
+            for rec in recs:
+                blk[p:p + 16] = encode_bmbt_rec(*rec)
+                p += 16
+            img[fsb * BLK:(fsb + 1) * BLK] = bytes(blk)
+
+        # 内联根 xfs_bmdr_block：4 字节头 + keys 全在前 + ptrs 在 4+maxrecs*8
+        FORK_LEN = INODE_SIZE - 176
+        MAXRECS = (FORK_LEN - 4) // 16
+
+        def mk_bmdr(level, keys, ptrs):
+            root = bytearray(FORK_LEN)
+            struct.pack_into(">HH", root, 0, level, len(ptrs))
+            for i, k in enumerate(keys):
+                struct.pack_into(">Q", root, 4 + i * 8, k)
+            base = 4 + MAXRECS * 8
+            for i, pv in enumerate(ptrs):
+                struct.pack_into(">Q", root, base + i * 8, pv)
+            return bytes(root)
+
+        # 文件：内联根 level=1 指到块 8，块 8 是 level 0 的叶块，两条记录
+        mk_bmap_leaf(BMAP_LEAF, [(BT_D0, 1, 0, 0), (BT_D1, 1, 1, 0)])
+        mk_inode(BT_FILE_INO, 0o100644, XFS_DINODE_FMT_BTREE, BT_SIZE,
+                 mk_bmdr(1, [0], [BMAP_LEAF]), nlink=1)
+
+        # 目录：内联根 -> 块 11 的叶块 -> 块 12 的 dir2 数据块
+        mk_bmap_leaf(DIR_LEAF, [(DIR_DATA, 1, 0, 0)])
+        db = bytearray(BLK)
+        db[0:4] = b"XDD3"                              # v5 dir2 数据块
+        struct.pack_into(">Q", db, 8, DIR_DATA)        # blkno
+        dp = 64                                        # 数据区起点
+        for dino, dname, dft in ((FILE_INO, "b.txt", FT_REG),
+                                 (BT_FILE_INO, "big.bin", FT_REG)):
+            nb = dname.encode()
+            db[dp:dp + 8] = struct.pack(">Q", dino)
+            db[dp + 8] = len(nb)
+            db[dp + 9:dp + 9 + len(nb)] = nb
+            db[dp + 9 + len(nb)] = dft
+            dp += (8 + 1 + len(nb) + 1 + 7) & ~7
+        struct.pack_into(">HH", db, dp, DIR2_FREE_TAG, BLK - dp)
+        struct.pack_into(">II", db, 48, dp, BLK - dp)  # best_free[0]
+        img[DIR_DATA * BLK:(DIR_DATA + 1) * BLK] = bytes(db)
+        mk_inode(BT_DIR_INO, 0o040755, XFS_DINODE_FMT_BTREE, BLK,
+                 mk_bmdr(1, [0], [DIR_LEAF]), nlink=2)
+
+        fx = dict(bt_file=BT_FILE_INO, bt_dir=BT_DIR_INO,
+                  bt_d0=BT_D0, bt_d1=BT_D1, bt_size=BT_SIZE,
+                  bt_expect=BT_EXPECT, big_ino=BT_FILE_INO, file_ino=FILE_INO,
+                  root_ino=ROOT_INO, root_off=inode_off(ROOT_INO))
+        return bytes(img), CONTENT, fx
+
+    img, CONTENT, FX = build()
     fs = Xfs(Buf(img))
     inf = fs.info()
     print("XFS: v%d blocksize=%d dblocks=%d agcount=%d inodesize=%d inopblog=%d"
@@ -580,4 +789,47 @@ if __name__ == "__main__":
     assert data == CONTENT, "内容不符: %r" % data[:40]
 
     assert fs.read_path("/a.txt") == CONTENT
+
+    # ---- b-tree 格式的 inode ----
+    bfi = fs.inode(FX["bt_file"])
+    print("  big.bin: fmt=%s size=%d extents=%s"
+          % (FORMAT_NAME[bfi.format], bfi.size, bfi.extents))
+    assert bfi.format == XFS_DINODE_FMT_BTREE, \
+        "b-tree inode 未被识别: format=%d" % bfi.format
+    assert len(bfi.extents) == 2, "应展开出 2 条记录，实得 %d" % len(bfi.extents)
+    assert bfi.extents == [(FX["bt_d0"], 1, 0, 0), (FX["bt_d1"], 1, 1, 0)], \
+        "b-tree 展开结果不符: %r" % (bfi.extents,)
+    bt_data = fs.read_file(bfi)
+    assert len(bt_data) == FX["bt_size"], \
+        "b-tree 文件长度不符: %d != %d" % (len(bt_data), FX["bt_size"])
+    assert bt_data == FX["bt_expect"], "b-tree 文件内容不符"
+    print("  b-tree 读回 %d B 且逐字节正确" % len(bt_data))
+
+    bdi = fs.inode(FX["bt_dir"])
+    assert bdi.format == XFS_DINODE_FMT_BTREE
+    bents = fs.listdir(bdi)
+    print("  b-tree 目录 %d 项: %s" % (len(bents), [e.name for e in bents]))
+    assert [e.name for e in bents] == ["b.txt", "big.bin"], \
+        "b-tree 目录项不符: %r" % ([e.name for e in bents],)
+    assert [e.inode for e in bents] == [FX["file_ino"], FX["bt_file"]], \
+        "b-tree 目录 inode 号不符"
+
+    # 位域：手算一组期望值对拍（state 是 bit63 单比特，startoff 54 位）
+    lo = (1 << 63) | (0x2A << 9) | 0x1
+    hi = (0x5 << 21) | 0x7
+    rec = decode_bmbt_rec(struct.pack(">QQ", lo, hi), 0)
+    assert rec == ((1 << 43) | 5, 7, 0x2A, 1), "bmbt_rec 位域解码不符: %r" % (rec,)
+    assert encode_bmbt_rec(*rec) == struct.pack(">QQ", lo, hi), \
+        "bmbt_rec 编解码不互逆"
+
+    # 时间戳偏移：di_mtime 在 40，di_atime 在 32
+    home = FX["root_off"]
+    img2 = bytearray(img)                 # img 是 bytes，拷一份再改
+    struct.pack_into(">I", img2, home + 40, 0x22222222)
+    struct.pack_into(">I", img2, home + 32, 0x11111111)
+    fs2 = Xfs(Buf(bytes(img2)))
+    r2 = fs2.inode(FX["root_ino"])
+    assert r2.mtime == 0x22222222 and r2.atime == 0x11111111, \
+        "时间戳偏移不对: atime=%#x mtime=%#x" % (r2.atime, r2.mtime)
+
     print("自检通过")

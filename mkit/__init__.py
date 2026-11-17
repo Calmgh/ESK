@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.7.8"
+__version__ = "1.7.9"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -45,6 +45,7 @@ __all__ = [
     "partrecover",
     "realm",
     "minifs",
+    "xfs_bmap",
 ]
 
 # 模块用途速查
@@ -66,7 +67,7 @@ MODULE_DOC = {
     "ext4": "ext2/3/4",
     "fat": "FAT12/16/32",
     "exfat": "exFAT",
-    "xfs": "XFS v4/v5（extent 格式；b-tree 格式 inode 未支持）",
+    "xfs": "XFS（超级块/AG/inode/短格式与 dir2 目录/extent 与 b-tree inode；attr fork 与 rmap 未做）",
     "hfs": "HFS / HFS+ / HFSX",
     "squashfs": "SquashFS v4（gzip / xz）",
     "cramfs": "CramFS v2",
@@ -124,6 +125,7 @@ MODULE_DOC = {
     "partrecover": "MBR/GPT 分区表解析、丢失分区特征扫描与分区表重建（EBR 链只解析不重建）",
     "realm": "Realm 数据库只读浏览（表/列/行；未能确认的布局明抛 NotImplementedError）",
     "minifs": "VxWorks MiniFS（TP-Link/Mercusys 私有只读容器：变体 A/B 结构判别、LZMA-alone）",
+    "xfs_bmap": "XFS bmap b-tree 解析器（xfs_bmbt_rec 编解码 / 内联根 + BMAP·BMA3 多级下钻；fork_len 两种解释用整树自洽性判别）",
 }
 
 
