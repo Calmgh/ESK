@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.7.3"
+__version__ = "1.7.4"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -39,6 +39,8 @@ __all__ = [
     "veracrypt",
     "vss",
     "bcachefs",
+    "efs",
+    "ocfs2",
 ]
 
 # 模块用途速查
@@ -112,6 +114,8 @@ MODULE_DOC = {
     "veracrypt": "VeraCrypt / TrueCrypt 卷头解析与口令解锁（AES-XTS，PBKDF2 多 PRF）",
     "vss": "Windows VSS 卷影副本（catalog / 块描述符 / 满·范围·零三种块）",
     "bcachefs": "bcachefs（超级块/字段链/成员/journal；**btree 未实现，目录与文件读取不可用**）",
+    "efs": "Windows EFS（$EFS 属性/凭据/密钥信息；FEK 为 RSA 加密，解不出明文）",
+    "ocfs2": "OCFS2（超级块/链列表/extent 与 extent 块树/线性与索引目录）",
 }
 
 

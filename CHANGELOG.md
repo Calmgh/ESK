@@ -3,6 +3,92 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.4] - 2026-11-17
+
+四个模块：经典 HFS 目录遍历、LUKS 解锁、Windows EFS、OCFS2。
+
+### 新增 / 升级
+
+- **`mkit/hfs.py`**（升级）—— 经典 HFS（HFS Standard）的 Catalog 遍历与文件读取
+  - 此前 `Hfs.listdir` / `read_file` / `walk` 一律抛 `NotImplementedError`，
+    只能读 MDB；现在补上 Catalog B 树解析
+  - 分配块字节偏移 = `drAlBlSt × 512 + N × drAlBlkSiz`（注意只有基准乘 512，
+    不是整个式子都乘——分配块通常远大于 512，写错会让各块互相重叠）
+  - Catalog 定位：`drCTFlSize@0x92` / `drCTExtRec@0x96`（前 3 个 extent）
+  - B 树：节点描述符 14 B（`fLink/bLink/kind/height/numRecords/reserved`），
+    `nodeSize` 从头记录里的自洽值反推，记录偏移表在节点末尾
+    `u16 at nodeSize-2*(i+1)`
+  - Catalog 键 = `keyLength u8 + parentID u32 + Str31(32 B)`，键后按 2 字节对齐，
+    记录体首字节是类型（1=cdrDirRec 2=cdrFilRec 3=cdrThdRec 4=cdrFThdRec）
+  - **`cdrDirRec` 不含目录自身的 CNID**，目录身份由 `cdrThdRec` 承载，
+    所以 `(parentID, name) → CNID` 必须反读一遍 thread 记录
+  - `listdir` / `walk` / `lookup_path`（同时接受 `:` 与 `/`）/ `read_file`
+    （数据叉与资源叉）/ `find` / `catalog_header`
+  - 自检 48 项，含新增的合成 Catalog B 树（根 + 子目录 + 两个文件）
+  - **未做**：超过 3 个 extent 的 Catalog 溢出部分不跟进（extents 溢出文件），
+    会在 `self.notes` 里记一条；目录缓存块（T_DIRC）不解析（走哈希表等价）
+
+- **`mkit/luks.py`**（升级）—— 从「只解头」到**口令解锁**
+  - LUKS1：8 个键槽逐个尝试，`PBKDF2 → 用派生密钥解密键槽密钥材料
+    （AES-XTS，tweak 基址 = `keyMaterialOffset`）→ AF_merge → mk_digest 校验`
+  - LUKS2：解析 JSON 元数据，对 `pbkdf2` 类型的 keyslot 做同样的
+    `解密 → AF_merge(4000 stripes) → digest 校验`；**Argon2 键槽抛
+    `NotImplementedError`**
+  - AFsplitter 的 `diffuse` 按 `H(be32(i) ‖ chunk)` 实现，与 cryptsetup
+    `lib/luks1/af.c` 和 on-disk-format.pdf §2.4 的 `d0=0, dk=H(dk−1 XOR sk)` 一致
+  - 新增 `decrypt_sector` / `encrypt_sector` / `read_decrypted`；
+    **`read_decrypted` 必须整扇区解密后再切片**——XTS 逐 16 B 块依赖，
+    截断密文会毁掉末块
+  - 自检 10 段，含 NIST CAVP 的 XTS 已知答案向量
+  - **未做**：Argon2 keyslot、非 AES 密码（serpent/twofish）、`lrw-benbi`/`benbi`、
+    非 `luks1` 的 AF 类型、非 `pbkdf2` 的摘要；**没有真实 cryptsetup 生成的
+    LUKS 镜像做回归**，验证依赖合成镜像 + 官方向量 + 源码/规范一致性
+
+- **`mkit/efs.py`**（新增）—— Windows EFS `$EFS` 属性取证解析
+  - 头部真实字段是 `length / state / version / crypto_api_version`，
+    共 0x4C 字节；`0x08` 是 EFS 版本（通常 2），`0x0C` 是 CryptoAPI 版本。
+    **没有 `type` / `data_len` 字段**——按 ntfs-3g `layout.h` 核对
+  - `EFS_DF_ARRAY_HEADER` 4 B、`EFS_DF_HEADER` 0x14、
+    `EFS_DF_CREDENTIAL_HEADER` 0x1C、`EFS_DF_CERTIFICATE_THUMBPRINT_HEADER` 0x14；
+    `length ≤ 0x54 或 > 0x40000` 判为非法（ntfs.sys 的 BSOD 边界）
+  - 凭据解析出 SID、用户名（UTF-16LE，含中文）、容器名、提供者名、
+    证书指纹、公钥 blob 长度与 DER 前缀 OID
+  - `decrypt_with_fek()` 支持 CBC/ECB/CFB128 往返；**`decrypt_file()` 直接抛
+    `NotImplementedError`**——FEK 由用户 X.509 公钥 RSA 加密，没有私钥
+    （PFX / 证书+私钥 / 域恢复代理私钥）就解不出，不做 RSA 解密、
+    不做私钥恢复、不解析 X.509 内部
+  - 自检 55 项；200 组随机数据 0 假阳性
+  - **未做**：NTFS 集成（只接受**已是 `$EFS` 属性内容**的字节，ADS 定位属
+    `mkit/ntfs.py`）；EFS 数据层的 IV 是否前置、是否带填充也未经查证，
+    所以 IV/填充做成显式参数，不猜
+
+- **`mkit/ocfs2.py`**（新增）—— OCFS2 只读解析
+  - 超级块位于块 0，签名 `"OCFSV2  "`（8 字节、两个尾随空格），
+    也接受 `"OCFSV2\0\0"`；候选偏移 0 / 1024 / 2048 / 4096 / 8192
+    （`OCFS2_SUPER_BLOCK_BLKNO = 2` 以**块**为单位）
+  - 超级块字段：版本、块大小位、簇大小位、max_slots、label（含中文）、uuid、
+    root_blkno、system_dir_blkno、feature 位
+  - 链列表：`cl_count` / `cl_next_free_rec` / `cl_recs[]`，组描述符
+    `"GROUP01"` 的 `bg_blkno` / `bg_parent_dinode` / `bg_next_group` / 位图偏移；
+    **位图不逐位解析**
+  - inode：extent 列表（内联）与 extent 块树（`"EXBLK01"`）递归下钻；
+    空指针与越界一律抛 `Ocfs2Error`
+  - 目录：线性目录可遍历；**索引目录（`OCFS2_INDEXED_DIR_FL`）抛
+    `NotImplementedError`**
+  - 自检 50 项
+  - **一个容易踩的坑（已修）**：OCFS2 的签名都是 `char sig[8]`，磁盘上第 8
+    字节是 NUL。常量若只写 7 字节，会出现两个连锁问题——
+    (a) 读端拿 8 字节切片去比 7 字节常量永远不等；
+    (b) 构建端 `b[0:8] = SIG_xxx` 只写 7 字节，**bytearray 的切片赋值会把
+    缓冲区缩短 1 字节**，导致之后所有字段偏移整体错位
+  - **未做**：索引目录、位图的逐位解析（只报偏移）、多槽位组描述符的位图校验
+
+### 验证
+
+- `hfs` 自检 48 项、`luks` 通过、`efs` 55 项、`ocfs2` 50 项，各自连跑两次均为 0
+- 四个模块都只在合成镜像上验证，没有对应的真实镜像可比对，各 docstring 已逐条标注
+
+
 ## [1.7.3] - 2026-11-16
 
 ### 新增

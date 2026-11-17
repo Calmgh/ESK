@@ -76,7 +76,7 @@
 | FAT12/16/32 | ✅ | **[~]** | `fat`（合成 FAT16 已测，真实卷待验） |
 | exFAT | ✅ | **[*]** | `exfat`（VBR/簇堆/0x85-0xC0-0xC1 目录项，合成镜像已测） |
 | APFS | ✅ | **[*]** | `ext/apfs_fs.py` + `apfs_map.py`（自建 omap 翻译） |
-| HFS | ✅ | **[~]** | `hfs.Hfs`（MDB 解析；目录遍历抛 NotImplementedError） |
+| HFS | ✅ | **[*]** | `hfs`（MDB 解析 + 经典 HFS Catalog B 树遍历与读写；超过 3 个 extent 的 Catalog 溢出部分不跟进） |
 | HFS+ / HFSX | ✅ | **[*]** | `hfs.HfsPlus`（卷头/备份卷头、Catalog B-tree、extents overflow、UTF-16BE 名） |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
 | UDF | ✅ | **[*]** | `udf`（同上） |
@@ -100,7 +100,7 @@
 | Amiga OFS/FFS | ✅ | **[*]** | `retrofs`（根块/哈希表/OFS-FFS 两种数据块） |
 | BeFS | ✅ | **[*]** | `retrofs`（超级块 @512 + inode + dirent） |
 | GFS2 | ✅ | **[*]** | `gfs2`（超级块/资源组/dinode/stuffed 与 EXHASH 目录/元树；rindex 与 readlink 未做） |
-| OCFS2 | ✅ | `[ ]` | 计划 |
+| OCFS2 | ✅ | **[*]** | `ocfs2`（超级块/链列表/extent 与 extent 块树/线性目录；索引目录抛 NotImplementedError，位图不逐位解析） |
 | NILFS2 | ✅ | **[*]** | `nilfs2`（段摘要/超级根/checkpoint/B-tree；SUFILE 语义与 ss_sumsum 强校验未做，无真实镜像验证） |
 | bcachefs | ✅ | **[*]** | `bcachefs`（超级块/字段链/成员/journal；**btree 未实现，不能列目录或读文件**，jset csum 未校验） |
 | **exFAT（ESK 独有前置）** | ✅ | **[*]** | 见上 |
@@ -112,11 +112,11 @@
 
 | 类型 | LovelyCarve | ESK | 模块 / 说明 |
 |---|:---:|:---:|---|
-| LUKS1 / LUKS2 | ✅ | **[~]** | `luks`（**只解头，不解锁**） |
+| LUKS1 / LUKS2 | ✅ | **[*]** | `luks`（头解析 + 口令解锁：LUKS1 PBKDF2+AFmerge+mk_digest、LUKS2 pbkdf2 keyslot；Argon2 与非 AES 抛 NotImplementedError；无真实镜像验证） |
 | BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码 + .BEK 启动密钥解锁、XTS/CBC/diffuser；TPM·口令只枚举） |
 | VeraCrypt | ✅ | **[*]** | `veracrypt`（AES-XTS + 多 PRF + PIM；whirlpool/stribog/Serpent/Twofish/Argon2id 抛 NotImplementedError，无真实卷验证） |
 | FileVault 2 | ✅ | **[*]** | `filevault2`（AES-KW 按 RFC 3394 官方向量验证 + XTS + 密钥链；加密上下文定位为启发式，无真实镜像验证） |
-| Windows EFS | — | `[ ]` | 计划 |
+| Windows EFS | ✅ | **[*]** | `efs`（$EFS 属性/凭据/密钥信息解析；**FEK 为 RSA 加密，decrypt_file() 抛 NotImplementedError**） |
 | NTFS VSS 卷影 | ✅ | **[*]** | `vss`（catalog + 描述符 + full/overlay/零三种块；多存储链与 previous_store 抛 NotImplementedError） |
 | 钱包/助记词 | — | **[*]** | `wallet`（**ESK 独有**） |
 | iOS 备份加密 | ✅ | **[*]** | `iosbackup_crypto` |

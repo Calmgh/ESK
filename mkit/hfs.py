@@ -1039,8 +1039,9 @@ class Hfs(object):
             "root_folder_count": self.root_dir_count,
             "write_count": self.write_count,
             "embedded_hfs_plus": embed,
-            "catalog_supported": False,
-            "note": "经典 HFS 目录遍历未实现；若是 HFS+ wrapper 请用 embedded_volume()",
+            "catalog_supported": True,
+            "note": "经典 HFS 已支持 Catalog 遍历与文件读取；"
+                    "若该卷是 HFS+ wrapper，请优先用 embedded_volume()",
         }
 
     def embedded_volume(self):
@@ -1053,16 +1054,323 @@ class Hfs(object):
         unit = self.alloc_block_size or 512
         return (estart * unit, ecount * unit)
 
-    def listdir(self, entry=None):
-        raise NotImplementedError(
-            "经典 HFS 的目录遍历未实现（Catalog 键格式不同）。"
-            "若该卷是 HFS+ wrapper，请用 embedded_volume() 取内嵌 HFS+ 卷。")
+    # ---------- 经典 HFS 的 Catalog 遍历 ----------
+    # MDB 里 Catalog 文件的位置：drCTFlSize@0x92（逻辑大小）、
+    # drCTExtRec@0x96（前 3 个 extent，每个 startBlock u16 + blockCount u16）。
+    # 分配块 N 的字节偏移 = drAlBlSt × 512 + N × drAlBlkSiz——
+    # drAlBlSt 是「第一个分配块所在的物理块号」，物理块固定 512 字节，
+    # 所以只有基准要乘 512，而不是整个式子都乘 512
+    # （分配块大小通常远大于 512，写成 (drAlBlSt+N)×512 会让各块互相重叠）。
+    _CAT_DIR_REC = 1
+    _CAT_FIL_REC = 2
+    _CAT_THD_REC = 3
+    _CAT_FTHD_REC = 4
+    _ROOT_CNID = 2
+
+    def _note(self, msg):
+        if not hasattr(self, "notes") or self.notes is None:
+            self.notes = []
+        self.notes.append(msg)
+
+    def _ab_off(self, blk):
+        return (self.first_alloc_block * 512
+                + int(blk) * (self.alloc_block_size or 512))
+
+    def catalog_extents(self):
+        """返回 (逻辑大小, [(起始分配块, 块数), ...])"""
+        if len(self.mdb) < 0x96 + 12:
+            raise ValueError("MDB 太短，读不到 Catalog 的 extent")
+        size = struct.unpack_from(">I", self.mdb, 0x92)[0]
+        exts = []
+        for i in range(3):
+            st, cnt = struct.unpack_from(">HH", self.mdb, 0x96 + i * 4)
+            if cnt:
+                exts.append((st, cnt))
+        return size, exts
+
+    def _read_extents(self, exts, size):
+        out = bytearray()
+        for st, cnt in exts:
+            if len(out) >= size:
+                break
+            take = min(size - len(out), cnt * (self.alloc_block_size or 512))
+            d = self.sub.read(self._ab_off(st), take)
+            out += d + b"\x00" * (take - len(d))
+        return bytes(out[:size])
+
+    def catalog_bytes(self):
+        """把 Catalog 的前 3 个 extent 读成连续字节
+
+        经典 HFS 的 Catalog 超过 3 个 extent 时，其余 extent 存在 extents
+        溢出文件里。这里不跟进溢出文件，覆盖不足时会记一条 note。
+        """
+        size, exts = self.catalog_extents()
+        if not exts:
+            raise ValueError("Catalog 没有 extent，无法遍历")
+        have = sum(c * (self.alloc_block_size or 512) for _, c in exts)
+        if size > have:
+            self._note("Catalog 声明 %d 字节，前 3 个 extent 只覆盖 %d；"
+                       "溢出 extent 未跟进（需 extents 溢出文件）" % (size, have))
+        return self._read_extents(exts, min(size, have))
+
+    def _cat_nodes(self):
+        """解析 Catalog B-tree，返回 (node_size, header, [(节点号, 记录列表)])"""
+        data = self.catalog_bytes()
+        if len(data) < 512:
+            raise ValueError("Catalog 太小，不像 B-tree")
+        node_size = None
+        hdr_off = None
+        # nodeSize 就写在头记录里，而头记录的位置又依赖 nodeSize，
+        # 所以按常见取值逐个试探，用「头记录里的 nodeSize 等于试探值」自洽校验。
+        for guess in (512, 1024, 2048, 4096, 8192):
+            if guess > len(data):
+                continue
+            off0 = struct.unpack_from(">H", data, guess - 2)[0]
+            if not (14 <= off0 < guess - 2):
+                continue
+            if off0 + 20 > len(data):
+                continue
+            ns = struct.unpack_from(">H", data, off0 + 18)[0]
+            if ns == guess:
+                node_size = guess
+                hdr_off = off0
+                break
+        if node_size is None:
+            raise ValueError("Catalog 头节点里找不到自洽的 nodeSize")
+        b = data[hdr_off:hdr_off + 106]
+        if len(b) < 26:
+            raise ValueError("Catalog 头记录不完整")
+        header = {
+            "tree_depth": struct.unpack_from(">H", b, 0)[0],
+            "root_node": struct.unpack_from(">I", b, 2)[0],
+            "leaf_records": struct.unpack_from(">I", b, 6)[0],
+            "first_leaf": struct.unpack_from(">I", b, 10)[0],
+            "last_leaf": struct.unpack_from(">I", b, 14)[0],
+            "node_size": struct.unpack_from(">H", b, 18)[0],
+            "max_key_len": struct.unpack_from(">H", b, 20)[0],
+            "total_nodes": struct.unpack_from(">I", b, 22)[0],
+        }
+        leaves = []
+        n = header["first_leaf"]
+        guard = 0
+        while n and guard < 100000:
+            guard += 1
+            o = n * node_size
+            if o + node_size > len(data):
+                self._note("Catalog 叶节点 %d 超出已读范围" % n)
+                break
+            blk = data[o:o + node_size]
+            cnt = struct.unpack_from(">H", blk, 10)[0]
+            f_link = struct.unpack_from(">I", blk, 0)[0]
+            recs = []
+            for i in range(cnt):
+                p = node_size - 2 * (i + 1)
+                if p < 14:
+                    break
+                ro = struct.unpack_from(">H", blk, p)[0]
+                if 14 <= ro < node_size:
+                    recs.append(blk[ro:])
+            leaves.append((n, recs))
+            n = f_link
+        return node_size, header, leaves
+
+    def catalog_records(self):
+        """解析出全部 catalog 记录（结果缓存）
+
+        经典 HFS 的 key = keyLength u8 + parentID u32 + Str31（32 字节：
+        长度字节 + 至多 31 个 MacRoman 字符）；键之后按 2 字节对齐，
+        记录体首字节是记录类型。
+        """
+        if getattr(self, "_cat_cache", None) is not None:
+            return self._cat_cache
+        _ns, header, leaves = self._cat_nodes()
+        out = []
+        for nid, recs in leaves:
+            for raw in recs:
+                if len(raw) < 8:
+                    continue
+                klen = raw[0]
+                if klen < 6 or 1 + klen > len(raw):
+                    continue
+                par = struct.unpack_from(">I", raw, 1)[0]
+                name = _pascal(raw, 5)
+                dstart = 1 + klen
+                if dstart % 2:
+                    dstart += 1
+                if dstart >= len(raw):
+                    continue
+                rtype = struct.unpack_from(">b", raw, dstart)[0]
+                out.append({"node": nid, "parent": par, "name": name,
+                            "type": rtype, "data": raw[dstart:]})
+        self._cat_cache = (header, out)
+        return self._cat_cache
+
+    def _dir_ids(self):
+        """用目录 thread 记录建立 (parentID, name) → CNID
+
+        cdrDirRec 里没有目录自身的 CNID，目录身份由 cdrThdRec 承载
+        （key = CNID + 空名，记录体 = type/resrv/cdrParID/cdrCName），
+        所以要把目录名映射到 CNID，必须反过来读一遍 thread 记录。
+        """
+        if getattr(self, "_dirid_cache", None) is not None:
+            return self._dirid_cache
+        _header, recs = self.catalog_records()
+        m = {}
+        for r in recs:
+            if r["type"] not in (self._CAT_THD_REC, self._CAT_FTHD_REC):
+                continue
+            d = r["data"]
+            if len(d) < 8:
+                continue
+            m[(struct.unpack_from(">I", d, 2)[0], _pascal(d, 6))] = r["parent"]
+        self._dirid_cache = m
+        return m
+
+    def _find_record(self, parent, name):
+        _header, recs = self.catalog_records()
+        for r in recs:
+            if (r["parent"] == parent and r["name"] == name
+                    and r["type"] in (self._CAT_DIR_REC, self._CAT_FIL_REC)):
+                return r
+        return None
+
+    def _entry_from(self, r):
+        """只使用 HfsEntry.__slots__ 里存在的槽名，避免 AttributeError"""
+        d = r["data"]
+        kw = {
+            "name": r["name"],
+            "parent_id": r["parent"],
+            "record_type": r["type"],
+            "is_dir": r["type"] == self._CAT_DIR_REC,
+            "rec_off": None,
+            "size": None,
+            "rsrc_size": None,
+            "flags": None,
+            "create": None,
+            "modify": None,
+            "cnid": None,
+            "path": None,
+        }
+        if len(d) >= 6:
+            kw["flags"] = struct.unpack_from(">H", d, 2)[0]
+        if kw["is_dir"]:
+            kw["cnid"] = self._dir_ids().get((r["parent"], r["name"]))
+            if len(d) >= 22:
+                kw["create"] = hfs_time(struct.unpack_from(">I", d, 14)[0])
+                kw["modify"] = hfs_time(struct.unpack_from(">I", d, 18)[0])
+        else:
+            if len(d) >= 40:
+                kw["cnid"] = struct.unpack_from(">I", d, 20)[0]
+                kw["size"] = struct.unpack_from(">I", d, 26)[0]
+                kw["rsrc_size"] = struct.unpack_from(">I", d, 36)[0]
+            if len(d) >= 52:
+                kw["create"] = hfs_time(struct.unpack_from(">I", d, 44)[0])
+                kw["modify"] = hfs_time(struct.unpack_from(">I", d, 48)[0])
+        return HfsEntry(**kw)
+
+    def catalog_header(self):
+        header, _recs = self.catalog_records()
+        return header
+
+    def listdir(self, cnid=None):
+        """列出目录项；cnid 为空时列根目录（fsRtDirID = 2）"""
+        if cnid is None:
+            cnid = self._ROOT_CNID
+        if isinstance(cnid, HfsEntry):
+            cnid = cnid.cnid if cnid.cnid is not None else self._ROOT_CNID
+        _header, recs = self.catalog_records()
+        out = []
+        for r in recs:
+            if r["parent"] != cnid or not r["name"]:
+                continue
+            if r["type"] not in (self._CAT_DIR_REC, self._CAT_FIL_REC):
+                continue
+            out.append(self._entry_from(r))
+        out.sort(key=lambda x: _fold(x.name))
+        return out
+
+    def walk(self, cnid=None, _depth=0, _max=32, _seen=None):
+        if _seen is None:
+            _seen = set()
+        if cnid is None:
+            cnid = self._ROOT_CNID
+        if cnid in _seen or _depth > _max:
+            return
+        _seen.add(cnid)
+        for e in self.listdir(cnid):
+            yield e
+            if e.is_dir and e.cnid is not None:
+                for x in self.walk(e.cnid, _depth + 1, _max, _seen):
+                    yield x
+
+    def lookup_path(self, path):
+        """经典 HFS 用 ':' 作路径分隔符，这里也接受 '/'"""
+        cur = self._ROOT_CNID
+        last = None
+        parts = [p for p in path.replace(":", "/").split("/") if p]
+        for part in parts:
+            hit = None
+            for e in self.listdir(cur):
+                if _fold(e.name) == _fold(part):
+                    hit = e
+                    break
+            if hit is None:
+                return None
+            last = hit
+            if not hit.is_dir:
+                return last
+            if hit.cnid is None:
+                return None
+            cur = hit.cnid
+        return last
 
     def read_file(self, entry, rsrc=False, limit=None):
-        raise NotImplementedError("经典 HFS 的文件读取未实现")
+        """读文件数据
 
-    def walk(self, *a, **kw):
-        raise NotImplementedError("经典 HFS 的目录遍历未实现")
+        经典 HFS 的文件记录里只有「首个分配块 + 逻辑长度」，即数据在分配块上
+        连续存放；超过 3 个 extent 的部分在 extents 溢出文件里，这里不跟进，
+        只会在 self.notes 里记一条。
+        """
+        if isinstance(entry, str):
+            entry = self.lookup_path(entry)
+        if entry is None:
+            raise FileNotFoundError("找不到该文件")
+        if getattr(entry, "is_dir", False):
+            raise IsADirectoryError("%r 是目录" % entry.name)
+        # 起始分配块不在 HfsEntry.__slots__ 里，所以按 (parent_id, name)
+        # 回 catalog 取原始记录
+        r = self._find_record(entry.parent_id, entry.name)
+        if r is None:
+            raise FileNotFoundError("Catalog 里找不到 %r 的记录" % entry.name)
+        d = r["data"]
+        if len(d) < 40:
+            raise ValueError("%r 的记录太短，读不到 fork 信息" % entry.name)
+        if rsrc:
+            start = struct.unpack_from(">H", d, 34)[0]
+            size = struct.unpack_from(">I", d, 36)[0]
+        else:
+            start = struct.unpack_from(">H", d, 24)[0]
+            size = struct.unpack_from(">I", d, 26)[0]
+        if not size:
+            return b""
+        want = size if limit is None else min(size, limit)
+        out = bytearray()
+        blk = start
+        unit = self.alloc_block_size or 512
+        while len(out) < want:
+            chunk = self.sub.read(self._ab_off(blk), unit)
+            if not chunk:
+                break
+            out += chunk
+            blk += 1
+        if len(out) < want:
+            self._note("%r 声明 %d 字节，只读到 %d"
+                       % (entry.name, want, len(out)))
+        return bytes(out[:want])
+
+    def find(self, pattern):
+        low = _fold(pattern)
+        return [e for e in self.walk() if low in _fold(e.name)]
 
     def deleted(self):
         return []
@@ -1311,8 +1619,8 @@ def _build_hfs_plus(sig=HFS_PLUS_SIG, version=4, with_primary=True):
     return img
 
 
-def _build_hfs_classic(label="HFSVOL", embed=None):
-    """构造经典 HFS 的 MDB（只用于验证字段解析）"""
+def _build_hfs_classic(label="HFSVOL", embed=None, with_catalog=False):
+    """构造经典 HFS 的 MDB；with_catalog=True 时再造 Catalog B 树与两个文件"""
     img = _Mem(b"\x00" * (64 * 1024))
     mdb = bytearray(254)
     struct.pack_into(">H", mdb, 0, HFS_SIG)
@@ -1329,6 +1637,98 @@ def _build_hfs_classic(label="HFSVOL", embed=None):
     struct.pack_into(">II", mdb, 84, 7, 2)          # drFilCnt/drDirCnt
     if embed:
         struct.pack_into(">HHH", mdb, 0x7C, HFS_PLUS_SIG, embed[0], embed[1])
+    if with_catalog:
+        # drAlBlSt=2、drAlBlkSiz=4096 → 分配块 N 位于 2×512 + N×4096。
+        # 块 0 会压在偏移 1024 的 MDB 上，所以从块 1 起用：
+        # 块 1 放 Catalog（两个 1024 B 节点），块 2/3 放两个文件的数据。
+        NODE = 1024
+
+        def _ab(n):
+            return 2 * 512 + n * 4096
+
+        txt = b"Hello classic HFS!\n"
+        inner = b"inner content\n"
+
+        def _key(par, name):
+            nb = name.encode("mac_roman")
+            b = bytearray(1 + 36)
+            b[0] = 36                    # keyLength = parentID(4) + Str31(32)
+            struct.pack_into(">I", b, 1, par)
+            b[5] = len(nb)
+            b[6:6 + len(nb)] = nb
+            return bytes(b)
+
+        def _rec(par, name, rtype, body=b""):
+            out = bytearray(_key(par, name))      # 37 字节
+            if len(out) % 2:                      # 键后按 2 字节对齐
+                out += b"\x00"
+            out.append(rtype)
+            out += body
+            return bytes(out)
+
+        def _thd(par, nm):
+            nb = nm.encode("mac_roman")
+            b = bytearray(37)             # resrv(1) + cdrParID(4) + Str31(32)
+            struct.pack_into(">I", b, 1, par)
+            b[5] = len(nb)
+            b[6:6 + len(nb)] = nb
+            return bytes(b)
+
+        def _dir():
+            b = bytearray(40)
+            struct.pack_into(">H", b, 1, 0)       # flags（记录体偏移 1）
+            struct.pack_into(">H", b, 3, 2)       # valence
+            return bytes(b)
+
+        def _fil(st, ln):
+            b = bytearray(52)
+            struct.pack_into(">H", b, 1, 0)       # flags
+            struct.pack_into(">I", b, 19, 0)      # flNum(CNID)
+            struct.pack_into(">H", b, 23, st)     # stBlk
+            struct.pack_into(">I", b, 25, ln)     # lgLen
+            struct.pack_into(">I", b, 29, ln)     # pyLen
+            return bytes(b)
+
+        recs = [
+            _rec(2, "", 3, _thd(1, label)),           # 根目录的线程记录
+            _rec(1, label, 1, _dir()),                # 根目录本身
+            _rec(2, "hello.txt", 2, _fil(2, len(txt))),
+            _rec(2, "sub", 1, _dir()),                # 子目录
+            _rec(16, "", 3, _thd(2, "sub")),          # 子目录的线程记录
+            _rec(16, "inner.txt", 2, _fil(3, len(inner))),
+        ]
+
+        def _node(kind, height, payloads):
+            blk = bytearray(NODE)
+            struct.pack_into(">IIbBHH", blk, 0, 0, 0, kind, height,
+                             len(payloads), 0)
+            pos = 14
+            offs = []
+            for p in payloads:
+                offs.append(pos)
+                blk[pos:pos + len(p)] = p
+                pos += len(p)
+                if pos % 2:
+                    pos += 1
+            for i, o in enumerate(offs):
+                struct.pack_into(">H", blk, NODE - 2 * (i + 1), o)
+            return bytes(blk)
+
+        hdr = bytearray(106)
+        struct.pack_into(">H", hdr, 0, 1)                 # treeDepth
+        struct.pack_into(">I", hdr, 2, 1)                 # rootNode
+        struct.pack_into(">I", hdr, 6, len(recs))         # leafRecords
+        struct.pack_into(">I", hdr, 10, 1)                # firstLeafNode
+        struct.pack_into(">I", hdr, 14, 1)                # lastLeafNode
+        struct.pack_into(">H", hdr, 18, NODE)             # nodeSize
+        struct.pack_into(">H", hdr, 20, 37)               # maxKeyLength
+        struct.pack_into(">I", hdr, 22, 2)                # totalNodes
+        nodes = _node(2, 0, [bytes(hdr)]) + _node(0, 1, recs)
+        img.write(_ab(1), nodes)
+        img.write(_ab(2), txt)
+        img.write(_ab(3), inner)
+        struct.pack_into(">I", mdb, 0x92, len(nodes))     # drCTFlSize
+        struct.pack_into(">HH", mdb, 0x96, 1, 1)          # drCTExtRec[0]
     img.write(VOLUME_HEADER_OFFSET, bytes(mdb))
     return img
 
@@ -1454,11 +1854,20 @@ def _selftest():
        "MDB 分配块 = 4096 x 32")
     ck(hi["create_date"] == "2001-09-09 01:46:40", "MDB 创建时间换算",
        hi["create_date"])
-    try:
-        hfs.listdir()
-        raise AssertionError("经典 HFS listdir 应抛 NotImplementedError")
-    except NotImplementedError:
-        ck(True, "经典 HFS listdir 抛 NotImplementedError")
+    hfs2 = Hfs(_build_hfs_classic(with_catalog=True))
+    names = sorted(e.name for e in hfs2.listdir())
+    ck(names == ["hello.txt", "sub"], "经典 HFS 根目录 2 项", names)
+    ck(hfs2.read_file("hello.txt") == b"Hello classic HFS!\n",
+       "经典 HFS 读文件内容一致")
+    ck(hfs2.read_file(":sub:inner.txt") == b"inner content\n",
+       "经典 HFS 子目录读文件")
+    walked = sorted(e.name for e in hfs2.walk())
+    ck(walked == ["hello.txt", "inner.txt", "sub"], "经典 HFS walk", walked)
+    ch = hfs2.catalog_header()
+    ck(ch["node_size"] == 1024 and ch["first_leaf"] == 1,
+       "Catalog 头记录", (ch["node_size"], ch["first_leaf"]))
+    ck(hfs2.lookup_path("/nope") is None, "经典 HFS 不存在路径返回 None")
+    ck(hfs2.info()["catalog_supported"] is True, "info() catalog_supported")
     wrap = Hfs(_build_hfs_classic(embed=(4, 40)))
     ck(wrap.embedded_volume() == (4 * 4096, 40 * 4096),
        "HFS+ wrapper 内嵌卷定位", wrap.embedded_volume())
