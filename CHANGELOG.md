@@ -3,6 +3,50 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.11] - 2026-11-17
+
+### 新增
+
+- **`mkit/squashfs_v123.py`** —— SquashFS **v1 / v2 / v3** 只读解析（v4 仍由
+  `mkit/squashfs.py` 负责，`probe()` 对 v4 明确返回 False，不抢）
+  - 超级块 **119 字节、大端**，逐字段解析；64 位表起始偏移与 32 位 `_2` 字段
+    互为回退（哪边自洽用哪边），`info()` 里注明取值来源
+  - **位域按 MSB-first**取（`_bits()`），v1/v2/v3 三套 inode 头分别处理：
+    v3 base 12 B、v2 base 4 B（无 mtime / 无 inode_number）、v1 base 3 B
+    （uid/guid 各 4 位）
+  - 覆盖 dir / ldir / reg / lreg / symlink / dev / ipc 全部 inode 类型
+  - 目录：v3 `dir_header`(9 B) + `dir_entry`(5 B，inode_number 为 16 位相对值)、
+    v2 `dir_header_2`(4 B) + `dir_entry_2`(3 B)；**v1 的目录结构按 v2 处理
+    （推断，docstring 已注明）**
+  - metadata 块按 u16 头（bit15 = 未压缩）解压；`SQUASHFS_CHECK_DATA` 置位时
+    多跳 1 字节 check
+  - 块表 u16（bit15 = 未压缩）拼装文件内容；支持 fragment 尾部
+  - 自检 12 项
+
+- **`mkit/tpmseal.py`** —— BitLocker TPM 相关**结构解析**（只判定，不解封）
+  - PCR 选择 `TPML_PCR_SELECTION`：多算法、跨字节位图（如 PCR 0/7/11/17）
+  - `TPM2B_PUBLIC`：RSA（keyBits/exponent，0 归一为 65537）与 ECC
+    （curveID → NIST P256/P384/P521）
+  - `TPM2B_PRIVATE`：integrity 的 TPM2B 长度与尾部残留
+  - BitLocker 保护者类型 5 种（恢复密码 / TPM / 启动密钥 / 明文密钥 /
+    用户密码 / 用户证书）
+  - `can_unlock_offline()`：恢复密码 / 启动密钥 / 明文密钥 → True；
+    TPM / 用户密码 / 证书 → False 并写清理由
+  - 自检 11 项
+
+### 明确不做（docstring 与自检都钉死了这条边界）
+
+- **`tpmseal` 不解封**：TPM 解封需要芯片内部的 SRK / storage key，离线无解。
+  本模块只把保护者链与 PCR 策略解析出来，让取证人员判断「这台机器的卷能不能用
+  现有材料解开」，并**明确报告不能**。自检里断言模块内不存在任何解封入口。
+- `squashfs_v123`：v1 的目录结构是推断（v1 太老、公开资料没有目录层定义）；
+  只支持 gzip(zlib) 与未压缩，其它压缩算法抛 `NotImplementedError`。
+
+### 验证
+
+- `squashfs_v123` 自检 12 项、`tpmseal` 自检 11 项，各连跑两次均 exit 0
+- 均只在合成镜像上验证，没有真实固件 / 真实 BitLocker 卷可比对
+
 ## [1.7.10] - 2026-11-17
 
 fix(v1.7.10): 修通 DDF 布局名到条带几何的接缝

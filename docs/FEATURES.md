@@ -84,7 +84,7 @@
 | ZFS | ✅ | **[*]** | `zfs`（uberblock/blkptr/fletcher4/ZAP/目录；**SA 未解，文件精确长度与 mtime 取不到**；无真实镜像验证） |
 | XFS | ✅ | **[*]** | `xfs`（超级块/AG/inode/短格式与 dir2 目录/extent 与 **b-tree inode**，经 `xfs_bmap`；**attr fork 与 rmap 未做**） |
 | ReFS | ✅ | **[*]** | `refs`（超级块 + 容器表 + 对象表 B+ 树） |
-| SquashFS v1–v4 | ✅ | **[~]** | `squashfs`（v4，gzip/xz；其他压缩算法抛 NotImplementedError） |
+| SquashFS v1–v4 | ✅ | **[*]** | `squashfs`（v4）+ `squashfs_v123`（v1/v2/v3 大端 119 字节超级块、MSB-first 位域；v1 目录结构为推断；非 gzip/未压缩抛 NotImplementedError） |
 | CramFS v2 | ✅ | **[*]** | `cramfs`（位域 inode、块指针表、zlib/未压缩/空洞/DIRECT_PTR） |
 | ROMFS | ✅ | **[*]** | `romfs`（inode 链表、校验和、硬链接/符号链接） |
 | MINIFS（VxWorks MiniFS，变体 A） | ✅ | **[*]** | `minifs`（`magic[16]+flag` + 88 B 明文目录项、路径内联、LZMA prop 0x5A/0x5D） |
@@ -114,7 +114,7 @@
 | 类型 | LovelyCarve | ESK | 模块 / 说明 |
 |---|:---:|:---:|---|
 | LUKS1 / LUKS2 | ✅ | **[*]** | `luks`（头解析 + 口令解锁：LUKS1 PBKDF2+AFmerge+mk_digest、LUKS2 pbkdf2 keyslot；Argon2 与非 AES 抛 NotImplementedError；无真实镜像验证） |
-| BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码 + .BEK 启动密钥解锁、XTS/CBC/diffuser；TPM·口令只枚举） |
+| BitLocker | ✅ | **[~]** | `bitlocker`（恢复密码 + .BEK 启动密钥解锁、XTS/CBC/diffuser）+ `tpmseal`（TPM 保护者 / PCR 策略结构解析与「能否离线解开」判定；**TPM 解封无解，不做**） |
 | VeraCrypt | ✅ | **[*]** | `veracrypt`（AES-XTS + 多 PRF + PIM；whirlpool/stribog/Serpent/Twofish/Argon2id 抛 NotImplementedError，无真实卷验证） |
 | FileVault 2 | ✅ | **[*]** | `filevault2`（AES-KW 按 RFC 3394 官方向量验证 + XTS + 密钥链；加密上下文定位为启发式，无真实镜像验证） |
 | Windows EFS | ✅ | **[*]** | `efs`（$EFS 属性/凭据/密钥信息解析；**FEK 为 RSA 加密，decrypt_file() 抛 NotImplementedError**） |
