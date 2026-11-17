@@ -3,6 +3,75 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.14] - 2026-11-17
+
+### 新增
+
+- **`mkit/vhdx.py`** —— VHD 与 VHDX 虚拟磁盘的只读解析（自检 14 项）
+
+  **VHD（页脚驱动，大端）**
+  - 双页脚副本探测（文件末尾 / 偏移 0 / 末尾-1024 / -1536 / 512 全试），
+    优先取 `checksum` 有效的那份，另一份作备份
+  - 512 字节页脚全字段；checksum 按 `(~sum) & 0xFFFFFFFF` 自证
+  - `cxsparse` 1024 字节头（含自身 checksum、`max_table_entries`、
+    `block_size`、`parent_unique_id` / `parent_timestamp` /
+    `parent_unicode_name`、`parent_locators` 平台码）
+  - BAT 为大端 u32，值是扇区号（×512）；块布局 = **512 字节位图 + block_size 数据**
+  - `fixed(2) / dynamic(3) / differencing(4)` 三种盘型全通；`read()` 对未分配块
+    与位图未置位的扇区补零；`allocated_ranges()` 只报已分配
+
+  **VHDX（小端）**
+  - `vhdxfile` 标识 + creator（UTF-16LE）
+  - **双头**（64KB / 128KB）各 4KB，CRC-32C 覆盖整段（校验字段置 0 后计算）；
+    取 CRC 通过者中 sequence 较大的；单份损坏回退另一份；两份都坏则降级但
+    报 `header_crc_ok=False` 并逐份记录
+  - **双区域表**（192KB / 256KB，64KB CRC）同策略，能认出 `BAT` 与 `Metadata`
+  - 元数据区 6 个 item：File Parameters（block_size、flags → HasParent）、
+    Virtual Disk Size、Virtual Disk ID、Logical / Physical Sector Size、
+    Parent Locator（只报长度与类型）
+  - BAT 为 u64，位域 `state[0:3) / FileOffsetMB[3:20) / LengthMB[20:45)`；
+    `chunk_ratio = block_size / logical_sector_size`，
+    `bat_entry(block) = chunk*(1+chunk_ratio) + 1 + idx`（`+1` 跳过扇区位图块）
+  - `read()` 按逻辑扇区查 chunk 位图；`ZERO` / `UNMAPPED` / `NOT_PRESENT`
+    与位图未置位一律补零
+  - `crc32c(b"123456789") == 0xE3069283`（标准校验值）在自检里被钉住
+
+### 与任务书的差异（以规范/qemu 为准，如实记录）
+
+1. **VHD 位图位序是 MSB-first**（第 0 扇区 = 首字节 bit7），与 qemu `vpc.c` 的
+   `1<<(7-(sector&7))` 一致；任务书写的「bit0」是简化。已收敛到
+   `_bitmap_get()` 单点 + 模块常量 `BITMAP_MSB_FIRST`，置 False 即切 LSB-first
+2. **VHD 的 `parent_unicode_name` 按 UTF-16BE 解码**（规范与 qemu 都是 BE），
+   任务书第 14 项写的是 LE；自检按 BE 往返验证中文名无损
+3. CRC-32C **没有复用** `mkit/filevault2.py` 那份：那个是 PV 头的弱变体
+   （`crc32c(b"123456789") == 0x1CF96D7C`，还需再取反才是标准值），
+   所以本模块自带表驱动实现（`CRC32C_IMPL='builtin._crc32c_local'`），
+   导入失败路径天然覆盖
+4. 固定 VHD 的 `block_size` 用约定值 0x20000（页脚里没有这个字段）
+5. VHDX 的 state 7 `PARTIALLY_PRESENT` 任务书未列，已补进名字表；
+   `length_mb = 0`（小块）时 `allocated_ranges()` 回退用 block_size
+
+### 未实现（docstring 已写明）
+
+- **差分盘 / 父盘链只解析不合并**：`parent()` 只报告父盘的 unique_id、
+  timestamp、名字与 locator，**不打开父盘**；父盘覆盖区读出来是零。
+  返回里显式带 `merged: False`
+- **不做 VHDX log 重放**（只用 `log_guid/log_version/log_length/log_offset`
+  报告位置，不应用日志、不做一致性修复）
+- 不写入、不修复、不重建 BAT、不处理 `saved_state` 的实质语义
+- VHDX 读路径按逻辑扇区粒度（正确但非最快），未加块级缓冲；只做取证解析
+- **VHDX 位图覆盖模型按任务书实现**（位图按「块内扇区号」索引、大小
+  `ceil(chunk_ratio/8)` 取整到逻辑扇区），与 MS-VHDX 原文对 chunk 覆盖范围的
+  表述有差异；该模型封装在 `_chunk_bitmap()` / `_logical_sector()` 两处，
+  若要改成「位图覆盖整个 chunk」只需动这两处
+
+### 验证
+
+- `vhdx` 自检 14 项连跑两次 exit 0；`crc32c(b"123456789")` 与标准值
+  `0xE3069283` 精确匹配
+- `selftest_all.py` 全模块自检失败数回到 0
+- 只在合成镜像上验证，没有真实 VHD/VHDX 样本可比对
+
 ## [1.7.13] - 2026-11-17
 
 ### 新增

@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.7.13"
+__version__ = "1.7.14"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -48,6 +48,7 @@ __all__ = [
     "xfs_bmap",
     "squashfs_v123",
     "tpmseal",
+    "vhdx",
 ]
 
 # 模块用途速查
@@ -130,6 +131,7 @@ MODULE_DOC = {
     "xfs_bmap": "XFS bmap b-tree 解析器（xfs_bmbt_rec 编解码 / 内联根 + BMAP·BMA3 多级下钻；fork_len 两种解释用整树自洽性判别）",
     "squashfs_v123": "SquashFS v1/v2/v3（大端；119 字节超级块、MSB-first 位域、LZMA 之外的压缩抛 NotImplementedError）",
     "tpmseal": "BitLocker TPM 结构（PCR 选择 / TPM2B_PUBLIC / TPM2B_PRIVATE / 保护者类型；**只判定能否离线解开，绝不实现解封**）",
+    "vhdx": "VHD（页脚/BAT/位图）与 VHDX（双头+区域表 CRC-32C、元数据、BAT 位域）只读解析；差分父盘链只解析不合并",
 }
 
 

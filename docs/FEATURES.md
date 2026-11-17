@@ -19,7 +19,7 @@
 | RAW / DD / IMG / BIN | ✅ | **[*]** | `image.Image` |
 | E01 / Ex01（EWF） | ✅ | **[*]** | `image.Image` + `ewf` + `ewf_external` |
 | VMDK（拆分/单文件） | ✅ | **[*]** | `ext/ans_c02vm2.py`、`ext/webvm3_dev.py` |
-| VHD / VHDX | ✅ | **[~]** | `ext/ans_c02_vhdx.py`、`ext/ans_c02r_lib.py` |
+| VHD / VHDX | ✅ | **[*]** | `vhdx`（VHD 双页脚+`cxsparse`+BAT+位图，fixed/dynamic/differencing；VHDX 双头与双区域表 CRC-32C、元数据 6 项、BAT 位域；**差分父盘链只解析不合并**，不做 log 重放） |
 | QCOW2 | ✅ | **[*]** | `vdisk.Qcow2`（v2/v3） |
 | VDI | ✅ | **[*]** | `vdisk.Vdi` |
 | ISO 9660 | ✅ | **[*]** | `iso.Iso9660`（PVD/SVD/Joliet/Rock Ridge NM，合成镜像已测） |
