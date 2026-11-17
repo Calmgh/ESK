@@ -1878,6 +1878,20 @@ def _run_checks():
         assert fs.read_file(kids[7]) == big["content"]
         assert fs.lookup_path("/h1199").size == 8300
 
+    # ---- 14 zlib-compressed metadata tables ------------------------------
+    def t14():
+        for check in (False, True):
+            img, _ = _Builder(3, compress_tables=True, check=check).build(
+                _tree_basic(3))
+            fs = SquashfsV123(img)
+            assert fs.info()["check_data"] is check
+            assert sorted(e.name for e in fs.listdir()) == \
+                ["big.bin", "hello.txt", "link.txt", "sub"]
+            exp = _expect_basic(3)
+            for path, want in exp.items():
+                e = fs.lookup_path(path)
+                assert fs.read_file(e) == want, "%s check=%s" % (path, check)
+
     T("1 probe v1/v2/v3 hit, v4/empty/garbage miss", t1)
     T("2 v2 synthetic: listdir + read_file + subdir", t2)
     T("3 v3 synthetic: blocks + fragment + symlink + empty file", t3)
@@ -1890,6 +1904,8 @@ def _run_checks():
     T("10 describe() fault tolerance + path/file/memoryview sources", t10)
     T("11 lookup_path / find / walk / readlink", t11)
     T("12 metadata stream crossing block boundary (dir > 8K)", t12)
+    T("13 v3 ldir/lreg inode variants (type 8/9)", t13)
+    T("14 zlib-compressed metadata tables (plain + CHECK_DATA)", t14)
 
     bad = [r for r in results if not r[1]]
     print("\n%d checks, %d passed, %d failed" %

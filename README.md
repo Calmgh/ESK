@@ -277,7 +277,7 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 | `realm.py` | 42.0 KB | **Realm DB**：表/列/行只读浏览 |
 | `minifs.py` | 33.0 KB | **VxWorks MiniFS**：变体 A/B + LZMA-alone |
 | `xfs_bmap.py` | 25.6 KB | **XFS bmap b-tree**：bmbt_rec 编解码、BMAP/BMA3 下钻 |
-| `squashfs_v123.py` | 78.0 KB | **SquashFS v1–v3**：119 字节大端超级块、MSB-first 位域 |
+| `squashfs_v123.py` | 70.0 KB | **SquashFS v1–v3**：119 字节大端超级块、MSB-first 位域、ldir/lreg、fragment |
 | `tpmseal.py` | 28.0 KB | **BitLocker TPM 结构**：PCR 策略、TPM2B_PUBLIC/PRIVATE（不解封） |
 | `timeline.py` | 56.2 KB | **时间线**：6 种时间戳换算、CSV/JSONL/SQLite 导出 |
 | `ad1.py` | 31.8 KB | **AD1** 逻辑镜像：段发现、块解压、目录树 |

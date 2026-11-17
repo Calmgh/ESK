@@ -3,6 +3,43 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.12] - 2026-11-17
+
+### 补测
+
+- **`mkit/squashfs_v123.py`** —— 自检从 12 项扩到 **14 项**，补的都是之前没覆盖的路径：
+  - v3 的 **ldir(type 8) / lreg(type 9)** 扩展 inode（`file_size:27 + offset:13`
+    跨字节、`i_count`、64 位 file_size 的内容比对）
+  - **zlib 压缩的 metadata 表**（inode 表 + 目录表整体压缩），以及它与
+    `CHECK_DATA` 的组合
+  - 另外把 v3 的用例补全：两个满块 + fragment 尾块 + symlink + 恰好整块
+    （无 fragment）+ 0 长度文件
+  - v2 用例补上 `limit` 截断与 fragment 尾块
+  - 端序证据加强：除「`u32@51` 大端 4096 / 小端 0x100000 不等」外，
+    再验两条回退路径——`@51` 清零要回落到 `u16@32`，64 位地址字段清零要回落到
+    `*_2@32`，两者都必须仍能读
+  - `lookup_path` 补测 `/`、空串、尾斜杠、不存在、穿过普通文件；
+    `readlink` 对普通文件要报错
+  - 三种 `sub` 形态（bytes / 路径字符串 / 文件对象 / memoryview）各跑一次真实读取
+  - metadata 流跨块：目录数据 > 8K（1201 项）连续跨块读取
+
+### 验证方式说明（重要）
+
+本机 `mksquashfs` 只产 v4，**无法本地生成 v1/v2/v3 真样本**。因此本模块的验证
+方式是「严格按 squashfs-tools 3.2 的 `squashfs_fs.h` 布局自建 writer ↔ parser
+互证」+ 端序/位序/跨块/畸形输入证据，**不是真样本对照**。拿到 squashfs-tools
+3.x 产物后建议重点冒烟两处：v1 的目录数据（该处结构是推断）与 v2 的 fragment
+尾块。
+
+### 推断项（docstring 已标注）
+
+1. v1 的目录数据按 v2 结构解析（v1 没有独立的目录项结构文档，用合成镜像验证
+   自洽，未与真实 v1 镜像互证）
+2. v1 ipc 的 `type:4 | offset:4` 只保留在 `raw`，不单独暴露字段
+3. uid/guid 取 inode 内联位域，`uid_start/guid_start` 与 lookup_table 只报告不解析
+4. v2/v1 的 `inode_number` 报 0（v2 base 无该字段、目录项也无相对号）属结构缺失
+5. 目录项的 3 位 `type` 只作交叉参考，条目分类以 inode 的 `inode_type` 为准
+
 ## [1.7.11] - 2026-11-17
 
 ### 新增

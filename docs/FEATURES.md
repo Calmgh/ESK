@@ -84,7 +84,7 @@
 | ZFS | ✅ | **[*]** | `zfs`（uberblock/blkptr/fletcher4/ZAP/目录；**SA 未解，文件精确长度与 mtime 取不到**；无真实镜像验证） |
 | XFS | ✅ | **[*]** | `xfs`（超级块/AG/inode/短格式与 dir2 目录/extent 与 **b-tree inode**，经 `xfs_bmap`；**attr fork 与 rmap 未做**） |
 | ReFS | ✅ | **[*]** | `refs`（超级块 + 容器表 + 对象表 B+ 树） |
-| SquashFS v1–v4 | ✅ | **[*]** | `squashfs`（v4）+ `squashfs_v123`（v1/v2/v3 大端 119 字节超级块、MSB-first 位域；v1 目录结构为推断；非 gzip/未压缩抛 NotImplementedError） |
+| SquashFS v1–v4 | ✅ | **[*]** | `squashfs`（v4）+ `squashfs_v123`（v1/v2/v3 大端 119 字节超级块、MSB-first 位域、ldir/lreg、fragment、CHECK_DATA，自检 14 项；**v1 目录结构为推断**，验证靠自建 writer↔parser 互证而非真样本；非 gzip/未压缩抛 NotImplementedError） |
 | CramFS v2 | ✅ | **[*]** | `cramfs`（位域 inode、块指针表、zlib/未压缩/空洞/DIRECT_PTR） |
 | ROMFS | ✅ | **[*]** | `romfs`（inode 链表、校验和、硬链接/符号链接） |
 | MINIFS（VxWorks MiniFS，变体 A） | ✅ | **[*]** | `minifs`（`magic[16]+flag` + 88 B 明文目录项、路径内联、LZMA prop 0x5A/0x5D） |
