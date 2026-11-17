@@ -130,7 +130,7 @@
 | 原类型预览（文本/十六进制/图片/音视频/PDF/Office） | ✅ | **[*]** | `preview`（sniff 20+ 类型、text/hex 预览、PNG/JPEG/GIF/BMP/PDF/RIFF/MP4/OOXML 元信息） |
 | SQLite 浏览（WAL 回放 / 删除恢复） | ✅ | **[*]** | `sqlite_forensic`（WAL 帧校验与回放、freeblock 扫描、已删表检测） |
 | Realm 浏览 | ✅ | `[ ]` | 低优先 |
-| PE / ELF / Mach-O / GGUF 结构视图 | ✅ | **[~]** | `preview` 已做 PE / ELF / Mach-O（含证书表、导入表、fat 架构）；**GGUF 未做** |
+| PE / ELF / Mach-O / GGUF 结构视图 | ✅ | **[*]** | `preview`（PE / ELF / Mach-O，含证书表、导入表、fat 架构）+ `gguf`（元数据 KV / tensor_info / alignment；**不做反量化**，K-quant 类型不猜字节数） |
 | 校验 MD5/SHA-1/SHA-256/SM3 | ✅ | **[*]** | `hashcalc` |
 | E01 采集哈希核对 | ✅ | **[*]** | `hashcalc.verify_ewf_hash` |
 | 全局搜索（多编码/正则/未分配） | ✅ | **[*]** | `search` |

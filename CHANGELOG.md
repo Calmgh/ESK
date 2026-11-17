@@ -3,6 +3,50 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.5] - 2026-11-17
+
+### 新增
+
+- **`mkit/gguf.py`** —— GGUF（llama.cpp / ggml 模型文件）结构解析
+  - 头部：magic `GGUF`（小端 u32 = 0x46554747）、version、tensor_count、
+    metadata_kv_count
+  - 元数据 KV：key 为 u64 长度 + UTF-8；值按 13 种类型解释（UINT8/INT8/
+    UINT16/INT16/UINT32/INT32/FLOAT32/BOOL/STRING/ARRAY/UINT64/INT64/FLOAT64）。
+    ARRAY 只展开到阈值（默认 1024），超过就只报元素类型与长度，
+    避免把大词表全读进内存
+  - tensor_info：name、n_dims、dims[]、type、offset（相对数据区起点）
+  - `alignment` 取自 `general.alignment`，缺省 32；据此算出数据区起点
+  - `read_tensor` 按偏移读**原始字节**，不做反量化
+  - 常用 kv 便捷取值（架构、名字、分词器），取不到返回 None
+  - 自检 43 项
+
+### 与题述的差异 / 记下的坑
+
+1. **张量类型与元数据值类型是两套编号**：张量的 `type` 是 `GGML_TYPE`
+   （0=F32、1=F16、2=Q4_0 …），元数据的 `type` 是另一个枚举
+   （0=UINT8、8=STRING、9=ARRAY …）。自检里一开始就是拿元数据表去查张量类型，
+   于是 F32 被显示成 `UINT8`——这个错误是被自检抓出来的
+2. **元数据之后的截断仍是合法文件**：构造时只解析头部与 tensor_info，不读张量
+   数据，所以「元数据区之后被截断」的文件头部依然合法，只有真正去读张量时才
+   报错。测试要分清这两种截断，别把合法头当坏文件
+
+### 未实现（docstring 已写明）
+
+- **反量化 / 张量数值还原**：本模块只给布局与原始字节，不给浮点数值。
+  把 Q4_0 之类还原成 F32 需要 ggml 的量化表，本模块不做
+- **`GGML_TYPE` 的完整 block 大小表**：只列出能在公开文档里逐一核对过的那一批
+  （F32/F16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q8_1/I8/I16/I32/I64/F64/BF16）。
+  `Q2_K` 以上的 K-quant 与 IQ 系列**不在表内**，遇到时 `bytes` 与
+  `block_size` 返回 `None` 并记 note，**不猜数值**
+- 分片（`split.count` / 多文件）不合并，只按单文件解析
+- 不校验 CRC（GGUF 本身没有校验字段）
+
+### 验证
+
+- `gguf` 自检 43 项通过，连跑两次均为 0
+- 只在合成镜像上验证，没有真实 GGUF 模型文件可比对
+
+
 ## [1.7.4] - 2026-11-17
 
 四个模块：经典 HFS 目录遍历、LUKS 解锁、Windows EFS、OCFS2。
