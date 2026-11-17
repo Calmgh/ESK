@@ -8,7 +8,7 @@
 [![Deps](https://img.shields.io/badge/required%20deps-1-lightgrey)]()
 [![Author](https://img.shields.io/badge/ESK-Calmgh06-orange)]()
 
-> 版本 1.7.5　｜　Python 3.11+　｜　Windows / Linux / macOS　｜　48 个模块
+> 版本 1.7.6　｜　Python 3.11+　｜　Windows / Linux / macOS　｜　48 个模块
 
 ---
 
@@ -267,7 +267,7 @@ data = fsx.read_data(ino)          # ⚠️ 是 read_data，不是 read_file
 | `filevault2.py` | 62.0 KB | **FileVault 2**：CoreStorage、RFC 3394 AES-KW、XTS 密钥链 |
 | `vss.py` | 46.3 KB | **VSS 卷影**：catalog、块描述符、full/overlay/zero |
 | `nilfs2.py` | 78.4 KB | **NILFS2**：段摘要、超级根、checkpoint、B-tree 目录 |
-| `casebook.py` | 58.3 KB | **案件管理**：哈希链审计、sqlite 索引、清单复核 |
+| `casebook.py` | 66.0 KB | **案件管理**：哈希链审计、sqlite 索引、卷快照、清单复核 |
 | `preview.py` | 96.0 KB | **预览与二进制视图**：20+ 类型嗅探、PE/ELF/Mach-O |
 | `bcachefs.py` | 47.2 KB | **bcachefs**：超级块、字段链、成员、journal（**btree 未实现**） |
 | `efs.py` | 43.8 KB | **Windows EFS**：$EFS 属性、凭据、密钥信息 |

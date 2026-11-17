@@ -126,7 +126,7 @@
 | 能力 | LovelyCarve | ESK | 模块 / 说明 |
 |---|:---:|:---:|---|
 | 案件管理 + 哈希链审计 | ✅ | **[*]** | `casebook`（Case + AuditLog 哈希链，篡改/删行/插行/改 prev 均可定位；**无签名或外部锚**，整链重写无法察觉） |
-| 卷快照 / 文件索引落盘 | ✅ | **[~]** | `casebook` 做了文件索引落盘（sqlite）；**卷快照（对分析状态做快照）未实现** |
+| 卷快照 / 文件索引落盘 | ✅ | **[*]** | `casebook`（sqlite 文件索引 + 卷快照：`snapshot` / `diff_snapshots` / `restore_snapshot` / `verify_snapshot`；快照为自校验 sha256，**无签名**，整体重写无法察觉） |
 | 原类型预览（文本/十六进制/图片/音视频/PDF/Office） | ✅ | **[*]** | `preview`（sniff 20+ 类型、text/hex 预览、PNG/JPEG/GIF/BMP/PDF/RIFF/MP4/OOXML 元信息） |
 | SQLite 浏览（WAL 回放 / 删除恢复） | ✅ | **[*]** | `sqlite_forensic`（WAL 帧校验与回放、freeblock 扫描、已删表检测） |
 | Realm 浏览 | ✅ | `[ ]` | 低优先 |

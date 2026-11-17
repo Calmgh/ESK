@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.7.5"
+__version__ = "1.7.6"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -108,7 +108,7 @@ MODULE_DOC = {
     "erofs": "EROFS（Android 只读分区：FLAT_PLAIN/INLINE/COMPRESSED + 自实现 LZ4）",
     "gfs2": "GFS2（集群文件系统：超级块/资源组/dinode/stuffed 与 EXHASH 目录/元树）",
     "zfs": "ZFS（uberblock/blkptr/fletcher4/ZAP/目录；SA 未解，文件精确长度与 mtime 取不到）",
-    "casebook": "取证案件管理 + 哈希链审计 + 文件索引落盘（Case / AuditLog / sqlite 索引）",
+    "casebook": "取证案件管理（Case / 哈希链 AuditLog / sqlite 索引 / 清单复核 / **卷快照 snapshot+diff+restore+verify**）",
     "filevault2": "FileVault 2 / CoreStorage（AES-KW + XTS + 口令→KEK→VMK 密钥链）",
     "nilfs2": "NILFS2（日志结构：超级块 / 段摘要与超级根 / checkpoint / B-tree 目录）",
     "preview": "原类型预览 + PE / ELF / Mach-O 结构视图（文件头按需解析，不执行）",

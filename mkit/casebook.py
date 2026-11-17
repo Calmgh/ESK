@@ -731,6 +731,200 @@ class Case:
             raise CaseError("哈希长度异常（需 sha256 64 位或 md5 32 位）：%r" % h)
         return [self._artifact_row(r) for r in rows]
 
+    # ---------------- 卷快照 ----------------
+    # 快照把「当前分析状态」冻结成一份可复核的副本：
+    #   snapshots/SNAP-0001/meta.json      计数、时间、审计锚点、内容 sha256
+    #   snapshots/SNAP-0001/artifacts.jsonl artifacts 全量（按 key 排序，逐行 JSON）
+    # 快照本身也进审计链，且 meta 里记 artifacts.jsonl 的 sha256，
+    # 所以事后改快照文件能被 verify_snapshot 抓出来。
+
+    def _snapshot_root(self):
+        return os.path.join(self.path, "snapshots")
+
+    def _snapshot_dir(self, snap_id):
+        return os.path.join(self._snapshot_root(), snap_id)
+
+    def _snapshot_metas(self):
+        if not isinstance(self._data.get("snapshots"), list):
+            self._data["snapshots"] = []
+        return self._data["snapshots"]
+
+    @staticmethod
+    def _art_key(r):
+        return (r.get("evidence_id") or "", r.get("path") or "")
+
+    def _all_artifact_keys(self):
+        return set(self._art_key(self._artifact_row(r))
+                   for r in self._db.execute("SELECT * FROM artifacts"))
+
+    def snapshot(self, label="", note=""):
+        """对当前分析状态做一次快照，返回该快照的 meta"""
+        self._writable()
+        metas = self._snapshot_metas()
+        n = len(metas) + 1
+        snap_id = "SNAP-%04d" % n
+        while os.path.exists(self._snapshot_dir(snap_id)):
+            n += 1
+            snap_id = "SNAP-%04d" % n
+        rows = self.find_artifacts("*")
+        rows.sort(key=self._art_key)
+        d = self._snapshot_dir(snap_id)
+        os.makedirs(d, exist_ok=True)
+        body = "".join(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n"
+                       for r in rows)
+        _atomic_write_text(os.path.join(d, "artifacts.jsonl"), body)
+        t = self._audit.tail()
+        if isinstance(t, dict):
+            tail_hash = t.get("hash") or t.get("record_hash") or ""
+        elif isinstance(t, str):
+            tail_hash = t
+        else:
+            tail_hash = ""
+        meta = {
+            "snapshot_id": snap_id,
+            "label": label or "",
+            "note": note or "",
+            "created": _now_iso(),
+            "artifact_count": len(rows),
+            "evidence_count": len(self._data.get("evidences", [])),
+            "audit_count": len(self._audit),
+            "audit_tail": tail_hash,
+            "artifacts_sha256": _sha256_text(body),
+        }
+        _atomic_write_text(
+            os.path.join(d, "meta.json"),
+            json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+        metas.append(meta)
+        self._save()
+        self._audit.append(
+            "snapshot.create", target=snap_id,
+            detail={"label": meta["label"],
+                    "artifact_count": meta["artifact_count"]})
+        return dict(meta)
+
+    def snapshots(self):
+        """列出全部快照摘要（以磁盘上的 meta.json 为准）"""
+        out = []
+        for m in self._snapshot_metas():
+            sid = m.get("snapshot_id")
+            if not sid:
+                continue
+            p = os.path.join(self._snapshot_dir(sid), "meta.json")
+            if os.path.exists(p):
+                try:
+                    with open(p, "r", encoding="utf-8-sig") as f:
+                        out.append(json.load(f))
+                    continue
+                except Exception:
+                    pass
+            out.append(dict(m))
+        return out
+
+    def _load_snapshot_rows(self, snap_id):
+        p = os.path.join(self._snapshot_dir(snap_id), "artifacts.jsonl")
+        if not os.path.exists(p):
+            raise CaseError("快照不存在或缺少 artifacts.jsonl：%s" % snap_id)
+        rows = []
+        with open(p, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except Exception as e:
+                    raise CaseError("快照 %s 的 artifacts.jsonl 有坏行：%s"
+                                    % (snap_id, e))
+        return rows
+
+    def diff_snapshots(self, a, b):
+        """比对两个快照的 artifacts（按 evidence_id+path 判等）"""
+        ra = dict((self._art_key(r), r) for r in self._load_snapshot_rows(a))
+        rb = dict((self._art_key(r), r) for r in self._load_snapshot_rows(b))
+        added = sorted((rb[k].get("path") or "") for k in rb if k not in ra)
+        removed = sorted((ra[k].get("path") or "") for k in ra if k not in rb)
+        changed = []
+        same = 0
+        for k in ra:
+            if k not in rb:
+                continue
+            x, y = ra[k], rb[k]
+            if (x.get("sha256") != y.get("sha256")
+                    or x.get("md5") != y.get("md5")
+                    or x.get("size") != y.get("size")):
+                changed.append(y.get("path") or "")
+            else:
+                same += 1
+        return {"a": a, "b": b, "added": added, "removed": removed,
+                "changed": sorted(changed), "same_count": same}
+
+    def restore_snapshot(self, snap_id, replace=False):
+        """把 artifacts 表恢复成快照状态
+
+        replace=True  先清空再按快照重建
+        replace=False 只补快照里有、现在缺的条目，不删任何现有条目
+        """
+        self._writable()
+        rows = self._load_snapshot_rows(snap_id)
+        inserted = 0
+        deleted = 0
+        existing = self._all_artifact_keys()
+        if replace:
+            cur = self._db.execute("DELETE FROM artifacts")
+            deleted = cur.rowcount if (cur.rowcount or 0) > 0 else 0
+            existing = set()
+        for r in rows:
+            if self._art_key(r) in existing:
+                continue
+            self._db.execute(
+                "INSERT INTO artifacts (evidence_id, path, inode, size, mtime,"
+                " kind, sha256, md5, meta_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                (r.get("evidence_id") or "", r.get("path") or "",
+                 _int_or_none(r.get("inode")), _int_or_none(r.get("size")),
+                 _float_or_none(r.get("mtime")), r.get("kind"),
+                 r.get("sha256"), r.get("md5"), r.get("meta_json") or ""))
+            inserted += 1
+        self._db.commit()
+        skipped = len(rows) - inserted
+        self._audit.append(
+            "snapshot.restore", target=snap_id,
+            detail={"replace": bool(replace), "inserted": inserted,
+                    "deleted": deleted, "skipped": skipped})
+        return {"snapshot_id": snap_id, "replace": bool(replace),
+                "inserted": inserted, "deleted": deleted, "skipped": skipped}
+
+    def verify_snapshot(self, snap_id):
+        """校验快照文件是否被改动，并报告审计锚点是否仍在链上"""
+        d = self._snapshot_dir(snap_id)
+        meta_p = os.path.join(d, "meta.json")
+        art_p = os.path.join(d, "artifacts.jsonl")
+        if not os.path.exists(meta_p) or not os.path.exists(art_p):
+            raise CaseError("快照不存在：%s" % snap_id)
+        try:
+            with open(meta_p, "r", encoding="utf-8-sig") as f:
+                meta = json.load(f)
+        except Exception as e:
+            return {"ok": False, "snapshot_id": snap_id,
+                    "reason": "meta.json 解析失败：%s" % e}
+        with open(art_p, "r", encoding="utf-8-sig") as f:
+            body = f.read()
+        want = meta.get("artifacts_sha256")
+        got = _sha256_text(body)
+        if want != got:
+            return {"ok": False, "snapshot_id": snap_id,
+                    "reason": "artifacts.jsonl 内容被改动（记录 %s，实际 %s）"
+                              % (want, got)}
+        lines = sum(1 for ln in body.splitlines() if ln.strip())
+        if lines != meta.get("artifact_count"):
+            return {"ok": False, "snapshot_id": snap_id,
+                    "reason": "条数不符（记录 %s，实际 %d）"
+                              % (meta.get("artifact_count"), lines)}
+        rec = meta.get("audit_count") or 0
+        now = len(self._audit)
+        return {"ok": True, "snapshot_id": snap_id, "artifact_count": lines,
+                "audit_recorded": rec, "audit_now": now,
+                "audit_extended": now > rec, "reason": ""}
+
     def stats(self):
         """索引统计"""
         db = self._db
@@ -1454,6 +1648,96 @@ def _selfcheck():
         assert "勘验报告" in raw
         lines.append("9 中文       OK  案件名/检查员/文件名/case.json 往返无损")
 
+        # ---------- 9.5 卷快照 ----------
+        # 这里要重建一个干净的 case（前面的 case 已经用于只读验证）
+        snap_case = Case(tmp, "快照案", examiner="张三")
+        snap_root = os.path.join(os.path.dirname(tmp), "snap-src-%d" % os.getpid())
+        os.makedirs(snap_root, exist_ok=True)
+        p1 = os.path.join(snap_root, "a.bin")
+        open(p1, "wb").write(b"A" * 16)
+        ev_s = snap_case.add_evidence(p1, "证据一", kind="image")
+        snap_case.add_artifact(ev_s, "/a.txt", size=11, hashes={"sha256": "aa" * 32})
+        snap_case.add_artifact(ev_s, "/b.txt", size=22, hashes={"sha256": "bb" * 32})
+        snap_case.add_artifact(ev_s, "/c.txt", size=33, hashes={"sha256": "cc" * 32})
+        assert len(snap_case.find_artifacts("*")) == 3
+
+        m1 = snap_case.snapshot("v1", "基线")
+        assert m1["snapshot_id"] == "SNAP-0001", m1["snapshot_id"]
+        assert m1["artifact_count"] == 3
+        assert len(snap_case.snapshots()) == 1
+        m2 = snap_case.snapshot("v2", "第二份")
+        assert m2["snapshot_id"] == "SNAP-0002", m2["snapshot_id"]
+        assert len(snap_case.snapshots()) == 2
+
+        d0 = snap_case.diff_snapshots("SNAP-0001", "SNAP-0002")
+        assert d0["added"] == [] and d0["removed"] == [] and d0["changed"] == []
+        assert d0["same_count"] == 3, d0["same_count"]
+
+        # 改一条的哈希、加一条、删一条
+        snap_case._db.execute(
+            "UPDATE artifacts SET sha256 = ? WHERE path = '/b.txt'", ("dd" * 32,))
+        snap_case._db.commit()
+        snap_case.add_artifact(ev_s, "/d.txt", size=44, hashes={"sha256": "ee" * 32})
+        snap_case._db.execute("DELETE FROM artifacts WHERE path = '/c.txt'")
+        snap_case._db.commit()
+        m3 = snap_case.snapshot("v3", "改动后")
+        d1 = snap_case.diff_snapshots("SNAP-0002", m3["snapshot_id"])
+        assert d1["added"] == ["/d.txt"], d1["added"]
+        assert d1["removed"] == ["/c.txt"], d1["removed"]
+        assert d1["changed"] == ["/b.txt"], d1["changed"]
+
+        # verify_snapshot：正常 ok，且报告审计链已延伸
+        v = snap_case.verify_snapshot("SNAP-0001")
+        assert v["ok"] is True and v["artifact_count"] == 3, v
+        assert v["audit_extended"] is True, v
+        # 手工改快照文件一个字节 -> 必须被抓出来
+        art_p = os.path.join(snap_case.path, "snapshots", "SNAP-0001",
+                            "artifacts.jsonl")
+        bad = open(art_p, "r", encoding="utf-8").read().replace("aa", "zz", 1)
+        open(art_p, "w", encoding="utf-8", newline="\n").write(bad)
+        v2 = snap_case.verify_snapshot("SNAP-0001")
+        assert v2["ok"] is False and "被改动" in v2["reason"], v2
+
+        # restore：replace=True 清空重建
+        r1 = snap_case.restore_snapshot("SNAP-0002", replace=True)
+        paths = sorted(a["path"] for a in snap_case.find_artifacts("*"))
+        assert paths == ["/a.txt", "/b.txt", "/c.txt"], paths
+        assert r1["inserted"] == 3 and r1["deleted"] >= 1, r1
+        # replace=False 只补缺失、不删
+        snap_case._db.execute("DELETE FROM artifacts WHERE path = '/a.txt'")
+        snap_case._db.commit()
+        r2 = snap_case.restore_snapshot("SNAP-0002", replace=False)
+        paths2 = sorted(a["path"] for a in snap_case.find_artifacts("*"))
+        assert paths2 == ["/a.txt", "/b.txt", "/c.txt"], paths2
+        assert r2["inserted"] == 1 and r2["deleted"] == 0, r2
+
+        # 只读案件拒绝快照与恢复
+        snap_case.close()
+        ro = Case.open(tmp, readonly=True)
+        refused = 0
+        for fn, args in ((ro.snapshot, ()), (ro.restore_snapshot, ("SNAP-0001",))):
+            try:
+                fn(*args)
+            except CaseError:
+                refused += 1
+        ro.close()
+        assert refused == 2, "只读案件应拒快照与恢复：%d/2" % refused
+
+        # 快照动作进审计链，链仍然自洽
+        au = AuditLog(os.path.join(tmp, "audit.jsonl"))
+        assert au.verify()["ok"] is True
+        acts = [e.get("action") for e in au.entries()]
+        assert "snapshot.create" in acts and "snapshot.restore" in acts, acts
+        au.close()
+        # 中文 label / note 无損
+        re_open = Case.open(tmp)
+        m = re_open.snapshots()[0]
+        assert m["label"] == "v1" and m["note"] == "基线", m
+        re_open.close()
+        shutil.rmtree(snap_root, ignore_errors=True)
+        lines.append("9.5 卷快照    OK  SNAP 递增 / diff 三类 / 篡改可检出 / "
+                     "restore+只读拒写 / 审计留痕")
+
     finally:
         if case is not None:
             try:
@@ -1478,4 +1762,4 @@ if __name__ == "__main__":
     for ln in out:
         print(" ", ln)
     print("-" * 58)
-    print("全部 10 项通过，用时 %.2fs" % (time.time() - started))
+    print("全部 %d 项通过，用时 %.2fs" % (len(out), time.time() - started))

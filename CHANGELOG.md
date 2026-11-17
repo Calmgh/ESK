@@ -3,6 +3,37 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.6] - 2026-11-17
+
+### 升级
+
+- **`mkit/casebook.py`** —— 补上**卷快照**（此前只有文件索引落盘）
+  - `Case.snapshot(label, note)`：把当前分析状态冻结成
+    `snapshots/SNAP-0001/{meta.json, artifacts.jsonl}`。`meta.json` 记
+    artifact 数、证据数、审计链长度与末尾哈希、以及 `artifacts.jsonl`
+    自身的 sha256
+  - `Case.snapshots()`：列出全部快照摘要，以磁盘上的 `meta.json` 为准
+  - `Case.diff_snapshots(a, b)`：按 `evidence_id+path` 判等，返回
+    `added` / `removed` / `changed` / `same_count`；`changed` 指同路径但
+    sha256 / md5 / size 变了
+  - `Case.restore_snapshot(id, replace=False)`：`replace=True` 清空重建，
+    `replace=False` 只补快照里有、现在缺的条目，不删任何现有条目
+  - `Case.verify_snapshot(id)`：重算 `artifacts.jsonl` 的 sha256 与
+    `meta.json` 里记录的比对，并报告审计锚点是否已延伸（`audit_extended`）
+  - 只读打开的案件上，`snapshot` 与 `restore_snapshot` 都抛 `CaseError`
+  - 快照与恢复动作都进哈希链审计（`snapshot.create` / `snapshot.restore`）
+  - 自检 11 项（原 10 项 + 卷快照一组），含「手工改快照文件一个字节 →
+    `verify_snapshot` 必须报 ok=False」和「replace=False 只补不删」
+
+### 设计说明
+
+- 快照存的是**分析状态**（artifacts 索引与计数），不是证据镜像本身；
+  证据完整性由 `manifest` / `verify_evidence` 负责，两件事分开
+- `meta.json` 里同时记审计链长度与末尾哈希，所以「快照之后又发生了多少事」
+  可以直接从 `verify_snapshot` 的 `audit_extended` 看出来
+- 快照文件本身的完整性靠 sha256 自校验，**没有签名**——和审计链一样，
+  整体重写依然能通过（哈希链/自校验的固有上限），这点在 docstring 里写明
+
 ## [1.7.5] - 2026-11-17
 
 ### 新增
