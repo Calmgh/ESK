@@ -557,7 +557,10 @@ ESK/
 ├── VERSION
 ├── requirements.txt
 ├── esk_cli.py              命令行入口（images / fs / hash / search / carve / luks / session）
-├── selftest_new.py         包级自检
+├── selftest_new.py
+
+> 全模块自检：`python selftest_all.py`（跑遍 mkit/ 下每个模块自带的 `__main__` 自检，78 个模块约 21 秒）
+         包级自检
 ├── mkit/                   核心库（78 模块 / 约 63,000 行）
 ├── ext/                    自建扩展（36 模块）
 ├── examples/               可运行示例（6 个）

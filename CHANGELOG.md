@@ -3,6 +3,46 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.13] - 2026-11-17
+
+### 新增
+
+- **`selftest_all.py`**（项目根目录）—— 全模块自检入口
+
+  之前 `selftest_new.py` 是**项目级功能自检**（内联断言 + 只对 `vdisk`/`luks`
+  起子进程），并不覆盖全部模块；而 ESK 的约定是「每个模块自带合成镜像自检」，
+  所以缺一个能一次跑遍所有模块的入口。补上。
+
+  按证据分四类，不猜：
+  - `PASS` —— 直接 `python mkit/x.py` 就 exit 0
+  - `PASS(-m)` —— 直接跑报 `attempted relative import`（模块用了包内相对导入），
+    改 `python -m mkit.x` 就 exit 0。**这不是缺陷**，只说明需要包上下文
+  - `SKIP(CLI)` —— 退出码 2 且输出里有 usage / 用法 / required / argument，
+    说明它是 argparse 命令行工具、缺参数属正常
+  - `FAIL` —— 以上都不成立的失败；有 FAIL 时脚本 exit 1
+
+  支持 `-q` 只看汇总，以及只跑指定模块（`python selftest_all.py xfs ocfs2`）。
+
+### 首跑结果（78 个模块，用时 20.9s，失败 0）
+
+```
+ 直接通过        : 68
+ 需 -m 才能跑    : 8   appdata, image, iosart, mail, mobile, sysconf, volume, wallet
+ 跳过的命令行工具: 2   regf, revkit
+ 失败            : 0
+```
+
+那 8 个模块用的是包内相对导入（`from .mobile import ...`），其余 70 个都带
+`try: from .x import ... / except ImportError: sys.path.insert(...)` 的回退，
+所以只有它们不能直接当脚本跑。这是**写法不一致**，不是功能缺陷，已在输出里
+明确说明「改 `python -m mkit.x` 即可」。
+
+### 说明
+
+`selftest_all.py` 与 `selftest_new.py` 分工不同：后者验的是跨模块功能
+（CLI / 导出 / 哈希 / 搜索等内联断言），前者验的是每个模块自己的
+`__main__` 自检。两者都要跑。
+
 ## [1.7.12] - 2026-11-17
 
 ### 补测
