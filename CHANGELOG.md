@@ -3,6 +3,62 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.8] - 2026-11-17
+
+### 新增
+
+- **`mkit/realm.py`** —— Realm 数据库只读浏览
+  - 按文件标识定位，解析表、列与行；`tables()` / `schema()` / `rows()` / `find()`
+  - 叶子判据按「`ref >= 32` 且节点可解析」收紧，避免把 inner 节点的 depth 字段
+    误当成子引用；另加多级 inner node 的用例
+  - **未能确认的布局一律抛 `NotImplementedError` 并说明卡在哪**，不返回空列表
+    假装成功
+
+- **`mkit/minifs.py`** —— VxWorks MiniFS（TP-Link / Mercusys 路由器固件的私有
+  只读容器文件系统）
+  - **查证结论：它既不是 Minix，也不是 UEFI EDK II**。另外反证了「MINIFS 是
+    MINIX 3 的 minixfs 别名」这个假设：MINIX 3 的 `minix/fs/Makefile` 里只有
+    `mfs`，没有 `minixfs/` 目录；而 Minix V1/V2/V3 早已由 `classicfs` 覆盖
+  - **「v3」这个版本号在任何公开资料里都无法证实**。ARES 2024 那篇逆向论文里
+    作者自己写的是「Hypothetically, one of the fields may contain the file
+    system version」——他们也没识别出版本字段。所以本模块**不按版本号分支，
+    而是按结构判别两套共存布局**
+  - 变体 A（老布局）：`magic[16] + flag`，其后每项 **88 字节**
+    `{size u32, offset u32（大端，相对首块）, name[80]}`，一块一文件
+  - 变体 B（新布局）：**32 字节固定头**（`0x14` 文件数、`0x1C` 名表长度，
+    `0x10`/`0x18` 用途未明，照实记录）+ ToN 名表 + **20 字节**文件表
+    （`path_off/name_off/chunk_no/part_off/size`）+ **12 字节**块表
+    （`chunk_off/chunk_size/decompressed_size`），**支持一块多文件切片**
+  - 大小端自动判别（两变体各按结构自洽性打分，B 另要求表内 ≥90% 项合法）
+  - LZMA-alone，配置字 **`0x5A000080`**（老）与 **`0x5D000080`**（新）都吃；
+    兼容「未压缩长度 = 0xFFFFFFFF」与流被截断（保留已解出部分）；块表
+    `decompressed_size` 与实际不符时记 notes
+  - 变体 A 的块边界**不裸匹配 4 字节配置字**，而是校验 13 字节 LZMA-alone 头
+    （`prop <= 224`、字典大小为 2^n 或 3·2^n、长度字段合法）再定界，避免在压缩
+    流内部误命中
+  - 魔数定位做整卷扫描、不假定对齐
+  - 自检 47 项
+
+### 未实现（docstring 已写明）
+
+- `realm`：未能确认的布局抛 `NotImplementedError`；不做写入
+- `minifs`：写操作（格式本身只读）；厂商若把块换成非 LZMA-alone（AES/zlib），
+  公开资料只到「疑似加密」这句猜测、没有算法，**抛 `MinifsError` 并记 notes，
+  不猜**；变体 B 名表若非明文，按 utf-8/replace 硬解并 warning，不实现厂商
+  私有名字解密；硬链接/符号链接/权限/属主/时间戳——**格式里没有这些字段**
+- `minifs` 变体 A 没有 `decompressed_size` 字段，故不对 A 做块表长度校验
+
+### FEATURES 标注调整
+
+`MINIFS v3` 这一行**拆成两行并去掉未经证实的「v3」**，改为按变体 A / B 分别标注，
+免得继续传播一个查不到出处的版本号。
+
+### 验证
+
+- `realm` 全部自检通过、`minifs` 47 项通过，各连跑两次均为 0
+- 均只在合成镜像上验证；`minifs` 的两套布局来自公开逆向资料，但没有真实固件
+  样本可比对
+
 ## [1.7.7] - 2026-11-17
 
 ### 新增

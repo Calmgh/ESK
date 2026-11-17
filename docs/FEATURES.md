@@ -87,7 +87,8 @@
 | SquashFS v1–v4 | ✅ | **[~]** | `squashfs`（v4，gzip/xz；其他压缩算法抛 NotImplementedError） |
 | CramFS v2 | ✅ | **[*]** | `cramfs`（位域 inode、块指针表、zlib/未压缩/空洞/DIRECT_PTR） |
 | ROMFS | ✅ | **[*]** | `romfs`（inode 链表、校验和、硬链接/符号链接） |
-| MINIFS v3 | ✅ | `[ ]` | 计划 |
+| MINIFS（VxWorks MiniFS，变体 A） | ✅ | **[*]** | `minifs`（`magic[16]+flag` + 88 B 明文目录项、路径内联、LZMA prop 0x5A/0x5D） |
+| MINIFS（VxWorks MiniFS，变体 B） | ✅ | **[*]** | `minifs`（32 B 头 + ToN + 20 B 文件表 + 12 B 块表；一块多文件；名表非明文只硬解并记 notes） |
 | F2FS | ✅ | **[*]** | `f2fs`（超级块/checkpoint/NAT/SIT/inode/目录；加密只识别） |
 | EROFS | ✅ | **[*]** | `erofs`（FLAT_PLAIN/INLINE/COMPRESSED + 自实现 LZ4；CHUNK_BASED 与 LZMA/ZSTD 抛 NotImplementedError） |
 | QNX4 / QNX6 | ✅ | **[*]** | `retrofs`（QNX4 64 B inode / QNX6 大端 @0x2000） |
@@ -129,7 +130,7 @@
 | 卷快照 / 文件索引落盘 | ✅ | **[*]** | `casebook`（sqlite 文件索引 + 卷快照：`snapshot` / `diff_snapshots` / `restore_snapshot` / `verify_snapshot`；快照为自校验 sha256，**无签名**，整体重写无法察觉） |
 | 原类型预览（文本/十六进制/图片/音视频/PDF/Office） | ✅ | **[*]** | `preview`（sniff 20+ 类型、text/hex 预览、PNG/JPEG/GIF/BMP/PDF/RIFF/MP4/OOXML 元信息） |
 | SQLite 浏览（WAL 回放 / 删除恢复） | ✅ | **[*]** | `sqlite_forensic`（WAL 帧校验与回放、freeblock 扫描、已删表检测） |
-| Realm 浏览 | ✅ | `[ ]` | 低优先 |
+| Realm 浏览 | ✅ | **[*]** | `realm`（表/列/行只读浏览；**未能确认的布局抛 NotImplementedError**，不假装成功） |
 | PE / ELF / Mach-O / GGUF 结构视图 | ✅ | **[*]** | `preview`（PE / ELF / Mach-O，含证书表、导入表、fat 架构）+ `gguf`（元数据 KV / tensor_info / alignment；**不做反量化**，K-quant 类型不猜字节数） |
 | 校验 MD5/SHA-1/SHA-256/SM3 | ✅ | **[*]** | `hashcalc` |
 | E01 采集哈希核对 | ✅ | **[*]** | `hashcalc.verify_ewf_hash` |
