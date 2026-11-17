@@ -3,6 +3,39 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.7.7] - 2026-11-17
+
+### 新增
+
+- **`mkit/partrecover.py`** —— MBR / GPT 分区表解析、丢失分区恢复与分区表重建
+  - **MBR**：0x1BE 起 4 个 16 字节分区项、签名 0x55AA；扩展分区
+    （type 0x05 / 0x0F / 0x85）沿 **EBR 链**遍历，逻辑分区相对偏移正确累加
+  - **GPT**：LBA1 的头（`EFI PART`）、分区项数组、**header CRC32 与 entries
+    CRC32 双校验**、GUID 按 mixed-endian 格式化、分区名 UTF-16LE（中文无损）
+  - 常见 MBR 类型与 GPT type GUID 的名字映射
+  - **恢复**：`recover_partitions()` 依次试 MBR → GPT 主 → GPT 备份 →
+    **1 MiB 步长特征扫描**（NTFS / FAT / exFAT / ext / XFS / HFS+ / HFSX / Btrfs），
+    分区表被清零时靠特征把候选找回来
+  - **重建**：`rebuild_table()` 生成可写回的分区表字节（MBR 512 字节 /
+    GPT 头 + 项，CRC32 重算）；`verify_rebuild()` 把自己生成的表再解一遍
+    与原布局比对，形成闭环自校验
+  - 自检 45 项
+
+### 设计说明与未实现（docstring 已写明）
+
+- **扩展分区（EBR 链）只解析、不重建**：逻辑分区的 EBR 是链式结构，重建要对
+  每一项单独写一个扇区；这里如实标注，不假装能重建。重建出的 MBR 会保留
+  扩展分区容器项（type 0x0F），但里面的逻辑分区不会回来
+- 全部按 **512 字节逻辑扇区**处理，**4K 原生扇区（512e / 4Kn）不处理**
+- LVM / RAID 成员的自动识别与重组不在本模块（属 `mkit/vdisk.py` / `mkit/raid.py`）
+- 不修改任何输入；`rebuild_table` 只返回字节，写回由调用方负责
+- 特征扫描默认只扫前 256 MiB（`SCAN_MAX`），避免对整盘做线性遍历
+
+### 验证
+
+- `partrecover` 自检 45 项通过，连跑两次均为 0
+- 只在合成镜像上验证；没有真实损坏分区表的磁盘样本可比对
+
 ## [1.7.6] - 2026-11-17
 
 ### 升级

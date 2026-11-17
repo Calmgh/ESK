@@ -135,7 +135,7 @@
 | E01 采集哈希核对 | ✅ | **[*]** | `hashcalc.verify_ewf_hash` |
 | 全局搜索（多编码/正则/未分配） | ✅ | **[*]** | `search` |
 | 时间线（+ USN 日志） | ✅ | **[*]** | `timeline`（6 种换算 + CSV/JSONL/SQLite 导出；USN/EVTX 需先由别的模块解析） |
-| 文件恢复（删除记录 + 重建分区） | ✅ | **[~]** | `fat.deleted`、`ntfs` 有删除项；重建分区未做 |
+| 文件恢复（删除记录 + 重建分区） | ✅ | **[*]** | `fat.deleted` / `ntfs` 删除项 + `partrecover`（MBR/EBR/GPT 解析、特征扫描恢复、分区表重建 + 自校验；**EBR 链只解析不重建**，4K 原生扇区不处理） |
 | 文件雕刻（14 种） | ✅ | **[*]** | `carve`（**16 种**，多 2 种） |
 | 插件系统（LPP v2） | ✅ | `[ ]` | `[-]` 不做，见文末 |
 | CLI + JSONL 会话 | ✅ | **[*]** | `esk_cli.py`（images / fs / hash / search / carve / luks / schema / session） |

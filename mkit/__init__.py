@@ -4,7 +4,7 @@
 # ============================================================
 """mkit 包：自研电子数据取证解析工具集。"""
 
-__version__ = "1.7.6"
+__version__ = "1.7.7"
 __author__ = "Calmgh06"
 __watermark__ = "ESK by Calmgh06"
 
@@ -42,6 +42,7 @@ __all__ = [
     "efs",
     "ocfs2",
     "gguf",
+    "partrecover",
 ]
 
 # 模块用途速查
@@ -118,6 +119,7 @@ MODULE_DOC = {
     "efs": "Windows EFS（$EFS 属性/凭据/密钥信息；FEK 为 RSA 加密，解不出明文）",
     "ocfs2": "OCFS2（超级块/链列表/extent 与 extent 块树/线性与索引目录）",
     "gguf": "GGUF 模型文件结构（元数据 KV / tensor_info / alignment；不做反量化，K-quant 类型不猜字节数）",
+    "partrecover": "MBR/GPT 分区表解析、丢失分区特征扫描与分区表重建（EBR 链只解析不重建）",
 }
 
 
